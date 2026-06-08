@@ -7,7 +7,7 @@ services:
     image: postgres:16-alpine
     container_name: cce-postgres
     environment:
-      POSTGRES_DB: cce_collector
+      POSTGRES_DB: ccedb
       POSTGRES_USER: cce_user
       POSTGRES_PASSWORD: cce_pass
     ports:
@@ -15,7 +15,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U cce_user -d cce_collector"]
+      test: ["CMD-SHELL", "pg_isready -U cce_user -d ccedb"]
       interval: 10s
       timeout: 5s
       retries: 5

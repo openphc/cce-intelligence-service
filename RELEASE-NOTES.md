@@ -47,7 +47,7 @@ Initial release of the CCE Intelligence Service — the delivery engine of the C
 ### Database
 - 4 owned tables: `receiver_adaptor`, `destination_adaptor_mapping`, `intelligence_delivery`, `intelligence_delivery_audit_log`
 - Flyway migrations (V1 schema)
-- Shared `cce_collector` database — zero Compliance table reads at runtime (fat event design)
+- Shared `ccedb` database — zero Compliance table reads at runtime (fat event design)
 - JsonNode for all JSONB columns
 
 ---
@@ -73,7 +73,7 @@ Initial release of the CCE Intelligence Service — the delivery engine of the C
 |----------|---------|-------------|
 | `DB_HOST` | `localhost` | PostgreSQL host |
 | `DB_PORT` | `5433` | PostgreSQL port |
-| `DB_NAME` | `cce_collector` | Database name |
+| `DB_NAME` | `ccedb` | Database name |
 | `DB_USERNAME` | `cce_user` | Database user |
 | `DB_PASSWORD` | `cce_pass` | Database password |
 | `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | Kafka brokers |
@@ -102,7 +102,7 @@ See [Deployment Guide](docs/deployment-guide.md) for full Kubernetes manifests a
 |---------|-------------|
 | CCE Compliance Service | Must start first (creates `protocol_definition` table referenced by FK) |
 | CCE Gateway Service | Routes authenticated requests to this service |
-| PostgreSQL | Shared `cce_collector` database on port 5433 |
+| PostgreSQL | Shared `ccedb` database on port 5433 |
 | Apache Kafka | Topic `cce.intelligence.triggers` with 25 partitions |
 
 ---

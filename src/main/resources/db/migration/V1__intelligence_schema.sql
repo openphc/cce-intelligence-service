@@ -1,6 +1,6 @@
 -- ============================================================================
 -- V1: Intelligence Service Schema
--- Database: cce_collector (shared with Compliance Service)
+-- Database: ccedb (shared with Compliance Service)
 -- Tables: receiver_adaptor, destination_adaptor_mapping, intelligence_delivery,
 --         intelligence_delivery_audit_log
 -- ============================================================================
@@ -124,3 +124,11 @@ CREATE INDEX idx_intelligence_delivery_audit_log_run
 
 CREATE INDEX idx_intelligence_delivery_audit_log_timestamp
     ON intelligence_delivery_audit_log (timestamp);
+
+-- ============================================================================
+-- 5. Replica Identity (for logical replication / CDC)
+-- ============================================================================
+ALTER TABLE receiver_adaptor REPLICA IDENTITY FULL;
+ALTER TABLE destination_adaptor_mapping REPLICA IDENTITY FULL;
+ALTER TABLE intelligence_delivery REPLICA IDENTITY FULL;
+ALTER TABLE intelligence_delivery_audit_log REPLICA IDENTITY FULL;

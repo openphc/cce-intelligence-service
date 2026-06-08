@@ -24,7 +24,7 @@ graph TB
     end
 
     subgraph Shared Infrastructure
-        DB[("PostgreSQL 16<br/>(cce_collector)")]
+        DB[("PostgreSQL 16<br/>(ccedb)")]
         KAFKA["Apache Kafka"]
     end
 
@@ -106,7 +106,7 @@ sequenceDiagram
 | Language | Java | 21 (LTS) |
 | Framework | Spring Boot | 3.4.x |
 | Build tool | Gradle | 8.x |
-| Database | PostgreSQL | 16+ (shared `cce_collector` database) |
+| Database | PostgreSQL | 16+ (shared `ccedb` database) |
 | Message broker | Apache Kafka | 3.7+ (KRaft mode) |
 | DB access | Spring Data JPA + Hibernate | (Spring Boot managed) |
 | DB migration | Flyway | (Spring Boot managed) |

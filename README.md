@@ -20,7 +20,7 @@ Compliance Service → Kafka → Intelligence Consumer → Intelligence Engine
 | Language | Java 21 (LTS) |
 | Framework | Spring Boot 3.4.x |
 | Build | Gradle 8.x |
-| Database | PostgreSQL 16+ (shared `cce_collector`) |
+| Database | PostgreSQL 16+ (shared `ccedb`) |
 | Messaging | Apache Kafka 3.7+ (KRaft) |
 | HTTP Client | Spring WebClient |
 | Observability | Micrometer + Prometheus |

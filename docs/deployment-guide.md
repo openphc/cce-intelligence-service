@@ -9,7 +9,7 @@
 
 | Dependency | Version | Notes |
 |-----------|---------|-------|
-| PostgreSQL | 16+ | Shared `cce_collector` database (port 5433) |
+| PostgreSQL | 16+ | Shared `ccedb` database (port 5433) |
 | Apache Kafka | 3.7+ | KRaft mode, 25 partitions on `cce.intelligence.triggers` |
 | CCE Compliance Service | 1.0.0+ | Must have run Flyway to create `protocol_definition` table |
 | JDK (build only) | 21 LTS | Not needed at runtime (JRE in container) |
@@ -50,7 +50,7 @@ All configuration is via environment variables. No config files need to be mount
 |----------|-------------|---------|
 | `DB_HOST` | PostgreSQL hostname | `cce-postgres.internal` |
 | `DB_PORT` | PostgreSQL port | `5433` |
-| `DB_NAME` | Database name | `cce_collector` |
+| `DB_NAME` | Database name | `ccedb` |
 | `DB_USERNAME` | Database user | `cce_user` |
 | `DB_PASSWORD` | Database password | *(secret)* |
 | `KAFKA_BOOTSTRAP_SERVERS` | Kafka broker addresses | `kafka-1:9092,kafka-2:9092` |
@@ -93,7 +93,7 @@ docker run -d \
   -p 8085:8085 \
   -e DB_HOST=cce-postgres.internal \
   -e DB_PORT=5433 \
-  -e DB_NAME=cce_collector \
+  -e DB_NAME=ccedb \
   -e DB_USERNAME=cce_user \
   -e DB_PASSWORD=<secret> \
   -e KAFKA_BOOTSTRAP_SERVERS=kafka-1:9092,kafka-2:9092 \
@@ -135,7 +135,7 @@ spec:
             - name: DB_PORT
               value: "5433"
             - name: DB_NAME
-              value: "cce_collector"
+              value: "ccedb"
             - name: DB_USERNAME
               valueFrom:
                 secretKeyRef:

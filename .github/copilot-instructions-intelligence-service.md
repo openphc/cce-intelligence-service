@@ -33,7 +33,7 @@ Spring Boot 3.4.x / Java 21 microservice that consumes **self-contained intellig
 - **Single dispatch (no fan-out):** One intelligence trigger → resolve one destination → one adaptor → one IntelligenceDelivery → one webhook POST.
 - **IntelligenceDelivery lifecycle:** `PENDING → EXECUTING → DELIVERED | FAILED | CANCELLED`. Each trigger creates at most one IntelligenceDelivery record.
 - **Idempotency:** `(intelligenceEventId, destinationAdaptorMappingId)` compound unique constraint on `intelligence_delivery` prevents duplicate processing. Re-delivered Kafka messages produce no duplicate deliveries.
-- **Table naming:** Intelligence Service owned tables use distinct names (`intelligence_delivery`, `intelligence_delivery_audit_log`, `destination_adaptor_mapping`, `receiver_adaptor`) to avoid conflicts with Compliance Service tables in the shared `cce_collector` database.
+- **Table naming:** Intelligence Service owned tables use distinct names (`intelligence_delivery`, `intelligence_delivery_audit_log`, `destination_adaptor_mapping`, `receiver_adaptor`) to avoid conflicts with Compliance Service tables in the shared `ccedb` database.
 
 ## IntelligenceDelivery State Machine
 
@@ -60,7 +60,7 @@ The Intelligence Service does **not** read any Compliance Service tables at runt
 
 ### Shared Database Model
 
-The Intelligence Service connects to the **same PostgreSQL database** (`cce_collector`) as all other CCE services. Infrastructure (PostgreSQL on port 5433, Kafka on port 9092) is deployed by the **CCE Collector Service**. The Intelligence Service's Flyway migration creates its 4 owned tables.
+The Intelligence Service connects to the **same PostgreSQL database** (`ccedb`) as all other CCE services. Infrastructure (PostgreSQL on port 5433, Kafka on port 9092) is deployed by the **CCE Collector Service**. The Intelligence Service's Flyway migration creates its 4 owned tables.
 
 ## Kafka Integration
 

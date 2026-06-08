@@ -31,7 +31,7 @@ cd cce-intelligence-service
 
 ### 2.2 Start Infrastructure
 
-PostgreSQL, Kafka, and the shared database (`cce_collector`) are deployed by the **CCE Collector Service**. All CCE services share the same database.
+PostgreSQL, Kafka, and the shared database (`ccedb`) are deployed by the **CCE Collector Service**. All CCE services share the same database.
 
 ```bash
 # Start shared infrastructure (PostgreSQL on port 5433 + Kafka on port 9092)
@@ -79,7 +79,7 @@ All configuration can be overridden via environment variables:
 |---|---|---|
 | `DB_HOST` | `localhost` | PostgreSQL hostname |
 | `DB_PORT` | `5433` | PostgreSQL port (shared with collector service) |
-| `DB_NAME` | `cce_collector` | Shared database name (all CCE services) |
+| `DB_NAME` | `ccedb` | Shared database name (all CCE services) |
 | `DB_USERNAME` | `cce_user` | Database username (shared with collector service) |
 | `DB_PASSWORD` | `cce_pass` | Database password (shared with collector service) |
 | `DB_POOL_SIZE` | `10` | HikariCP max pool size |
@@ -199,7 +199,7 @@ cce-intelligence-service/
 
 ## 5. Database Setup
 
-All CCE services share the same database (`cce_collector`) on the PostgreSQL instance deployed by the CCE Collector Service (port `5433`, user `cce_user`). The Intelligence Service owns **4 tables** and does **not** read any Compliance Service tables at runtime (fat event design).
+All CCE services share the same database (`ccedb`) on the PostgreSQL instance deployed by the CCE Collector Service (port `5433`, user `cce_user`). The Intelligence Service owns **4 tables** and does **not** read any Compliance Service tables at runtime (fat event design).
 
 ### 5.1 Table Ownership
 
@@ -222,7 +222,7 @@ Migrations are applied automatically on application startup. To run manually:
 
 ```bash
 # Using Gradle Flyway plugin (if configured)
-./gradlew flywayMigrate -Dflyway.url=jdbc:postgresql://localhost:5433/cce_collector \
+./gradlew flywayMigrate -Dflyway.url=jdbc:postgresql://localhost:5433/ccedb \
                         -Dflyway.user=cce_user \
                         -Dflyway.password=cce_pass
 
@@ -250,7 +250,7 @@ docker run -d \
   -p 8085:8085 \
   -e DB_HOST=host.docker.internal \
   -e DB_PORT=5433 \
-  -e DB_NAME=cce_collector \
+  -e DB_NAME=ccedb \
   -e DB_USERNAME=cce_user \
   -e DB_PASSWORD=cce_pass \
   -e KAFKA_BOOTSTRAP_SERVERS=host.docker.internal:9092 \
