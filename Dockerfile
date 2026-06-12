@@ -32,9 +32,6 @@ RUN chown -R cce:cce /app
 
 USER cce
 
-# JVM tuning for containers
-ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError"
-
 EXPOSE 8085
 
 # Health check
