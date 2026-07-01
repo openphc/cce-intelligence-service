@@ -14,7 +14,7 @@ graph LR
         C1["IntelligenceTriggerConsumer"]
         EH["DefaultErrorHandler<br/>retry + DLQ"]
         ENGINE["IntelligenceEngine"]
-        ROUTER["SubscriptionRouter"]
+        ROUTER["DestinationRouter"]
     end
 
     subgraph DLQ Topics
@@ -133,7 +133,7 @@ cce.kafka:
 
 ## 4. Inbound Message Schema — IntelligenceTriggerEvent
 
-Published by the Compliance Service (v1.1.0+) when an intelligence action's condition matches — triggered by a step's state change. The event is **self-contained** — the Compliance Service resolves all routing and payload metadata at publish time (action type, severity, intelligence channel, protocol definition), so the Intelligence Service requires **zero Compliance table reads** on the hot path.
+Published by the Compliance Service (v1.1.0+) when an intelligence action's condition matches — triggered by a step's state change. The event is **self-contained** — the Compliance Service resolves all routing and payload metadata at publish time (action type, severity, intelligence destination, protocol definition), so the Intelligence Service requires **zero Compliance table reads** on the hot path.
 
 ### CloudEvents Envelope
 
@@ -165,11 +165,12 @@ The **Kafka record value** is the `IntelligenceTriggerEvent` JSON payload (the `
   "protocolDefinitionId": "ppd00001-0001-0001-0001-000000000001",
   "actionType": "CommunicationRequest",
   "severity": "HIGH",
-  "intelligenceChannel": "supervisor",
+  "intelligenceDestination": "supervisor",
   "stepState": "overdue",
   "actionId": "anc-visit-2",
   "protocolCanonical": "http://openphc.org/fhir/PlanDefinition/anc-high-risk|2.1",
-  "detectedAt": "2026-03-25T00:00:05Z"
+  "detectedAt": "2026-03-25T00:00:05Z",
+  "eventPayload": null
 }
 ```
 
@@ -181,16 +182,17 @@ The **Kafka record value** is the `IntelligenceTriggerEvent` JSON payload (the `
 | `subject` | String | Yes | Patient UPID (e.g., `260225-0002-5501`). |
 | `intelligenceEventId` | UUID | Yes | Compliance Service's `intelligence_event_log.id` (primary key). Idempotency anchor for `intelligence_delivery`. |
 | `actionDefinitionId` | UUID | Yes | FK to Compliance Service's `action_definition.id` — stored on `intelligence_delivery` for traceability. |
-| `protocolDefinitionId` | UUID | Yes | FK to `protocol_definition.id` — routing key for `channel_subscription` lookup. Resolved by Compliance from the evaluator's runtime context (`intelligence_event_log.protocol_instance_id → protocol_instance.protocol_definition_id`). |
-| `actionType` | String | Yes | FHIR `ActivityDefinition.kind` value: `CommunicationRequest`, `Task`, or `ServiceRequest`. The Intelligence Service maps this to its own action type (`NOTIFICATION`, `ESCALATION`, `COORDINATION`) at consumption time — see [ActionType mapping](data-dictionary.md#actiontype). |
+| `protocolDefinitionId` | UUID | Yes | FK to `protocol_definition.id` — stored on `intelligence_delivery` for traceability. Resolved by Compliance from the evaluator's runtime context (`intelligence_event_log.protocol_instance_id → protocol_instance.protocol_definition_id`). |
+| `actionType` | String | Yes | FHIR `ActivityDefinition.kind` value: `CommunicationRequest`, `Task`, or `ServiceRequest`. Stored directly as the Intelligence Service `action_type` — no secondary mapping. |
 | `severity` | String | Yes | Effective severity: `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`. Resolved by Compliance from PlanDefinition extension `intelligence-severity`, falling back to `action_definition.severity`. |
-| `intelligenceChannel` | String | Yes | Effective routing channel (e.g., `supervisor`, `patient-reminder`). Resolved by Compliance from PlanDefinition extension `intelligence-channel`, falling back to `action_definition.intelligence_channel`. Used with `protocolDefinitionId` + `actionId` for `channel_subscription` routing. |
+| `intelligenceDestination` | String | Yes | Effective routing destination (e.g., `supervisor`, `patient-reminder`). Resolved by Compliance from PlanDefinition extension `intelligence-destination`, falling back to `action_definition.intelligence_destination`. Used for `destination_adaptor_mapping` routing lookup. |
 | `stepState` | String | Yes | Current step state (lowercase): `due`, `overdue`, `missed`, `completed`. Used for trigger type derivation and FHIR extension. |
-| `actionId` | String | Yes | PlanDefinition action ID (e.g., `anc-visit-2`). Used for step-level routing in `channel_subscription`. |
+| `actionId` | String | Yes | PlanDefinition action ID (e.g., `anc-visit-2`). Stored on `intelligence_delivery` for traceability and FHIR payload. |
 | `protocolCanonical` | String | Yes | Protocol `url\|version` |
 | `detectedAt` | OffsetDateTime | Yes | When the event was detected |
+| `eventPayload` | JsonNode | No | Original FHIR payload from the Compliance Service. When present **and** `actionType` is `ServiceRequest`, the `FhirPayloadBuilder` passes this through as-is to the Receiver Adaptor instead of constructing a synthetic FHIR resource. `null` for most trigger events (CommunicationRequest, Task). |
 
-> **Design rationale (fat event):** By including `actionDefinitionId`, `protocolDefinitionId`, `actionType`, `severity`, and `intelligenceChannel` in the event, the Intelligence Service eliminates all Compliance table reads (`intelligence_event_log`, `action_definition`, `protocol_instance`, `protocol_definition`, `step_instance`) from the processing hot path. This is safe because ActivityDefinitions and PlanDefinitions are immutable once published — the values at trigger time are the correct values for the lifetime of the intelligence event.
+> **Design rationale (fat event):** By including `actionDefinitionId`, `protocolDefinitionId`, `actionType`, `severity`, and `intelligenceDestination` in the event, the Intelligence Service eliminates all Compliance table reads (`intelligence_event_log`, `action_definition`, `protocol_instance`, `protocol_definition`, `step_instance`) from the processing hot path. This is safe because ActivityDefinitions and PlanDefinitions are immutable once published — the values at trigger time are the correct values for the lifetime of the intelligence event.
 
 ### Message Key
 
@@ -232,7 +234,7 @@ Use this derived type for the `cce.intelligence.triggers.received` counter tag.
   "protocolDefinitionId": "ppd00001-0002-0002-0002-000000000002",
   "actionType": "CommunicationRequest",
   "severity": "MEDIUM",
-  "intelligenceChannel": "supervisor",
+  "intelligenceDestination": "supervisor",
   "stepState": "overdue",
   "actionId": "viral-load-check",
   "protocolCanonical": "http://openphc.org/fhir/PlanDefinition/hiv-treatment|1.0",
@@ -251,7 +253,7 @@ Use this derived type for the `cce.intelligence.triggers.received` counter tag.
   "protocolDefinitionId": "ppd00001-0001-0001-0001-000000000001",
   "actionType": "CommunicationRequest",
   "severity": "HIGH",
-  "intelligenceChannel": "supervisor",
+  "intelligenceDestination": "supervisor",
   "stepState": "missed",
   "actionId": "anc-visit-3",
   "protocolCanonical": "http://openphc.org/fhir/PlanDefinition/anc-high-risk|2.1",
@@ -270,15 +272,46 @@ Use this derived type for the `cce.intelligence.triggers.received` counter tag.
   "protocolDefinitionId": "ppd00001-0001-0001-0001-000000000001",
   "actionType": "CommunicationRequest",
   "severity": "LOW",
-  "intelligenceChannel": "patient-reminder",
+  "intelligenceDestination": "patient-reminder",
   "stepState": "completed",
   "actionId": "anc-visit-2",
   "protocolCanonical": "http://openphc.org/fhir/PlanDefinition/anc-high-risk|2.1",
-  "detectedAt": "2026-04-02T10:30:00Z"
+  "detectedAt": "2026-04-02T10:30:00Z",
+  "eventPayload": null
 }
 ```
 
 > **Note:** Completion triggers have `stepState: "completed"`. The trigger type `step.completed` is derived from `stepState == "completed"`. Whether this represents a late or on-time completion depends on the PlanDefinition's action condition — the Intelligence Service treats both the same. See [Trigger Type Derivation](#trigger-type-derivation).
+
+### 5.4 ServiceRequest Trigger with Passthrough Payload
+
+When the Compliance Service triggers a `ServiceRequest` action, it can include the original incoming FHIR payload in the `eventPayload` field. The Intelligence Service passes this through to the Receiver Adaptor as-is, without constructing a synthetic FHIR resource.
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440102",
+  "subject": "260225-0002-5501",
+  "intelligenceEventId": "990e8400-e29b-41d4-a716-446655440013",
+  "actionDefinitionId": "aad00001-0001-0001-0001-000000000003",
+  "protocolDefinitionId": "ppd00001-0001-0001-0001-000000000001",
+  "actionType": "ServiceRequest",
+  "severity": "HIGH",
+  "intelligenceDestination": "lab-coordinator",
+  "stepState": "due",
+  "actionId": "lab-referral-1",
+  "protocolCanonical": "http://openphc.org/fhir/PlanDefinition/anc-high-risk|2.1",
+  "detectedAt": "2026-04-03T08:00:00Z",
+  "eventPayload": {
+    "resourceType": "ServiceRequest",
+    "status": "active",
+    "intent": "order",
+    "subject": { "identifier": { "system": "http://openphc.org/fhir/patient-upid", "value": "260225-0002-5501" } },
+    "code": { "coding": [{ "system": "http://loinc.org", "code": "26453-1", "display": "CBC" }] }
+  }
+}
+```
+
+> **Passthrough behavior:** When `actionType` is `ServiceRequest` and `eventPayload` is not `null`, the `FhirPayloadBuilder` returns `eventPayload` directly — no synthetic resource is constructed. If `eventPayload` is `null`, a `ServiceRequest` resource is built by `FhirPayloadBuilder` as a fallback.
 
 ---
 
@@ -319,7 +352,7 @@ public void consume(IntelligenceTriggerEvent event) {
 | Guarantee | Mechanism |
 |---|---|
 | **At-least-once delivery** | `AckMode.RECORD` + `DefaultErrorHandler` + no auto-commit |
-| **Idempotency** | `(intelligenceEventId, channelSubscriptionId)` uniqueness on `intelligence_delivery` |
+| **Idempotency** | `(intelligenceEventId, destinationAdaptorMappingId)` uniqueness on `intelligence_delivery` |
 | **Ordering (per partition)** | Key-based routing on `intelligenceEventId` ensures one trigger per key |
 | **Transactional reads** | `isolation.level=read_committed` prevents reading uncommitted |
 
