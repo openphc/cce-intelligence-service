@@ -9,7 +9,7 @@
 ## Table of Contents
 
 1. [Intelligence Deliveries](#1-intelligence-deliveries)
-2. [Channel Subscriptions](#2-channel-subscriptions)
+2. [Destination Adaptor Mappings](#2-destination-adaptor-mappings)
 3. [Receiver Adaptors](#3-receiver-adaptors)
 4. [Actuator Endpoints](#4-actuator-endpoints)
 5. [Error Response Format](#5-error-response-format)
@@ -18,7 +18,7 @@
 
 ## 1. Intelligence Deliveries
 
-Intelligence Deliveries track the **delivery lifecycle** of fired intelligence actions to Receiver Adaptors. Created automatically when the intelligence engine processes a trigger and fans out to subscribed adaptors. Exposed read-only with support for manual cancellation.
+Intelligence Deliveries track the **delivery lifecycle** of fired intelligence actions to Receiver Adaptors. Created automatically when the intelligence engine processes a trigger and resolves the destination to a mapped adaptor. Exposed read-only with support for manual cancellation.
 
 **Required scope**: `intelligence-deliveries:read` (GET), `intelligence-deliveries:write` (POST cancel)
 
@@ -36,10 +36,9 @@ Intelligence Deliveries track the **delivery lifecycle** of fired intelligence a
 | `subject` | `String` | No | Filter by patient UPID |
 | `intelligenceEventId` | `UUID` | No | Filter by intelligence event |
 | `actionDefinitionId` | `UUID` | No | Filter by action definition |
-| `actionType` | `String` | No | Filter by action type: `NOTIFICATION`, `ESCALATION`, `COORDINATION` |
+| `actionType` | `String` | No | Filter by action type: `CommunicationRequest`, `Task`, `ServiceRequest` |
 | `severity` | `String` | No | Filter by severity: `LOW`, `MEDIUM`, `HIGH`, `CRITICAL` |
-| `channel` | `String` | No | Filter by channel name (e.g., `supervisor`) |
-| `protocolDefinitionId` | `UUID` | No | Filter by protocol definition |
+| `destination` | `String` | No | Filter by destination name (e.g., `supervisor`) |
 | `page` | `int` | No | Page number (0-based, default: `0`) |
 | `size` | `int` | No | Page size (default: `20`) |
 
@@ -52,10 +51,10 @@ Intelligence Deliveries track the **delivery lifecycle** of fired intelligence a
       "id": "b2c3d4e5-0001-4000-b000-000000000001",
       "intelligenceEventId": "990e8400-e29b-41d4-a716-446655440010",
       "actionDefinitionId": "a1b2c3d4-0001-4000-a000-000000000001",
-      "actionType": "NOTIFICATION",
+      "actionType": "CommunicationRequest",
       "actionId": "anc-visit-2",
-      "channel": "supervisor",
-      "channelSubscriptionId": "d4e5f6a7-0001-4000-d000-000000000010",
+      "destination": "supervisor",
+      "destinationAdaptorMappingId": "d4e5f6a7-0001-4000-d000-000000000010",
       "receiverAdaptorId": "c3d4e5f6-0001-4000-c000-000000000001",
       "receiverAdaptorName": "Kigali South SMS Gateway",
       "status": "DELIVERED",
@@ -95,10 +94,10 @@ Intelligence Deliveries track the **delivery lifecycle** of fired intelligence a
     "id": "b2c3d4e5-0001-4000-b000-000000000001",
     "intelligenceEventId": "990e8400-e29b-41d4-a716-446655440010",
     "actionDefinitionId": "a1b2c3d4-0001-4000-a000-000000000001",
-    "actionType": "NOTIFICATION",
+    "actionType": "CommunicationRequest",
     "actionId": "anc-visit-2",
-    "channel": "supervisor",
-    "channelSubscriptionId": "d4e5f6a7-0001-4000-d000-000000000010",
+    "destination": "supervisor",
+    "destinationAdaptorMappingId": "d4e5f6a7-0001-4000-d000-000000000010",
     "receiverAdaptorId": "c3d4e5f6-0001-4000-c000-000000000001",
     "receiverAdaptorName": "Kigali South SMS Gateway",
     "status": "DELIVERED",
@@ -109,9 +108,9 @@ Intelligence Deliveries track the **delivery lifecycle** of fired intelligence a
       "resourceType": "CommunicationRequest",
       "status": "active",
       "priority": "urgent",
-      "category": [{ "coding": [{ "system": "http://openphc.org/fhir/CodeSystem/cce-action-type", "code": "NOTIFICATION" }] }],
+      "category": [{ "coding": [{ "system": "http://openphc.org/fhir/CodeSystem/cce-action-type", "code": "CommunicationRequest" }] }],
       "subject": { "identifier": { "system": "http://openphc.org/fhir/patient-upid", "value": "260225-0002-5501" } },
-      "payload": [{ "contentString": "[HIGH] NOTIFICATION for patient 260225-0002-5501 — step anc-visit-2 overdue (PlanDefinition/anc-high-risk|2.1)" }]
+      "payload": [{ "contentString": "[HIGH] CommunicationRequest for patient 260225-0002-5501 — step anc-visit-2 overdue (PlanDefinition/anc-high-risk|2.1)" }]
     },
     "deliveryResult": {
       "httpStatus": 200,
@@ -212,30 +211,26 @@ Intelligence Deliveries track the **delivery lifecycle** of fired intelligence a
 
 ---
 
-## 2. Channel Subscriptions
+## 2. Destination Adaptor Mappings
 
-Channel Subscriptions define the **many-to-many routing** between protocol definition channels and Receiver Adaptors. Each subscription maps a `(protocolDefinitionId, actionId, channel)` tuple to a specific Receiver Adaptor. The `actionId` is optional — when omitted (`null`), the subscription acts as a wildcard for all steps in the protocol. Step-specific subscriptions take precedence over wildcards during routing.
+Destination Adaptor Mappings define the **1:1 routing** between an intelligence destination and a Receiver Adaptor. Each destination (e.g., `supervisor`, `patient-reminder`) maps to exactly one adaptor. The `destination` column is unique — attempting to create a duplicate mapping returns `409 Conflict`.
 
-**Required scope**: `channel-subscriptions:read` (GET), `channel-subscriptions:write` (POST, PUT, DELETE)
+**Required scope**: `destination-adaptor-mappings:read` (GET), `destination-adaptor-mappings:write` (POST, PUT, DELETE)
 
 ---
 
-### 2.1 Create Channel Subscription
+### 2.1 Create Destination Adaptor Mapping
 
-**`POST /v1/channel-subscriptions`** — Create a new channel subscription.
+**`POST /v1/destination-adaptor-mappings`** — Create a new destination-to-adaptor mapping.
 
 **Request Body**
 
 ```json
 {
-  "protocolDefinitionId": "550e8400-e29b-41d4-a716-446655440000",
-  "actionId": "anc-visit-2",
-  "channel": "supervisor",
+  "destination": "supervisor",
   "receiverAdaptorId": "c3d4e5f6-0001-4000-c000-000000000001"
 }
 ```
-
-> **Note:** `actionId` is optional. Omit to create a wildcard subscription that matches all steps in the protocol for the given channel.
 
 **Response:** `201 Created`
 
@@ -243,10 +238,7 @@ Channel Subscriptions define the **many-to-many routing** between protocol defin
 {
   "data": {
     "id": "d4e5f6a7-0001-4000-d000-000000000010",
-    "protocolDefinitionId": "550e8400-e29b-41d4-a716-446655440000",
-    "protocolCanonical": "http://openphc.org/fhir/PlanDefinition/anc-high-risk|2.1",
-    "actionId": "anc-visit-2",
-    "channel": "supervisor",
+    "destination": "supervisor",
     "receiverAdaptorId": "c3d4e5f6-0001-4000-c000-000000000001",
     "receiverAdaptorName": "Kigali South SMS Gateway",
     "status": "ACTIVE",
@@ -259,22 +251,20 @@ Channel Subscriptions define the **many-to-many routing** between protocol defin
 | Error Status | Condition |
 |:-------------|:----------|
 | `400` | Missing required fields or invalid UUIDs |
-| `404` | `protocolDefinitionId` or `receiverAdaptorId` does not exist |
-| `409` | Subscription for `(protocolDefinitionId, actionId, channel, receiverAdaptorId)` already exists |
+| `404` | `receiverAdaptorId` does not exist |
+| `409` | Mapping for `destination` already exists (destination is unique) |
 
 ---
 
-### 2.2 List Channel Subscriptions
+### 2.2 List Destination Adaptor Mappings
 
-**`GET /v1/channel-subscriptions`** — Retrieve all channel subscriptions with optional filters.
+**`GET /v1/destination-adaptor-mappings`** — Retrieve all destination-adaptor mappings with optional filters.
 
 **Query Parameters**
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `protocolDefinitionId` | `UUID` | No | Filter by protocol definition |
-| `actionId` | `String` | No | Filter by action ID (step-level); use `__null__` for wildcard-only subscriptions |
-| `channel` | `String` | No | Filter by channel name |
+| `destination` | `String` | No | Filter by destination name |
 | `receiverAdaptorId` | `UUID` | No | Filter by receiver adaptor |
 | `status` | `String` | No | Filter by status: `ACTIVE`, `INACTIVE` |
 
@@ -285,10 +275,7 @@ Channel Subscriptions define the **many-to-many routing** between protocol defin
   "data": [
     {
       "id": "d4e5f6a7-0001-4000-d000-000000000010",
-      "protocolDefinitionId": "550e8400-e29b-41d4-a716-446655440000",
-      "protocolCanonical": "http://openphc.org/fhir/PlanDefinition/anc-high-risk|2.1",
-      "actionId": "anc-visit-2",
-      "channel": "supervisor",
+      "destination": "supervisor",
       "receiverAdaptorId": "c3d4e5f6-0001-4000-c000-000000000001",
       "receiverAdaptorName": "Kigali South SMS Gateway",
       "status": "ACTIVE",
@@ -297,12 +284,9 @@ Channel Subscriptions define the **many-to-many routing** between protocol defin
     },
     {
       "id": "d4e5f6a7-0002-4000-d000-000000000011",
-      "protocolDefinitionId": "550e8400-e29b-41d4-a716-446655440000",
-      "protocolCanonical": "http://openphc.org/fhir/PlanDefinition/anc-high-risk|2.1",
-      "actionId": null,
-      "channel": "supervisor",
+      "destination": "patient-reminder",
       "receiverAdaptorId": "c3d4e5f6-0002-4000-c000-000000000002",
-      "receiverAdaptorName": "CCE Dashboard Adaptor",
+      "receiverAdaptorName": "WhatsApp Bot Adaptor",
       "status": "ACTIVE",
       "createdAt": "2026-03-25T10:00:00Z",
       "updatedAt": "2026-03-25T10:00:00Z"
@@ -313,39 +297,40 @@ Channel Subscriptions define the **many-to-many routing** between protocol defin
 
 ---
 
-### 2.3 Get Channel Subscription by ID
+### 2.3 Get Destination Adaptor Mapping by ID
 
-**`GET /v1/channel-subscriptions/{id}`**
+**`GET /v1/destination-adaptor-mappings/{id}`**
 
 | Path Parameter | Type | Description |
 |:---------------|:-----|:------------|
-| `id` | `UUID` | Channel subscription ID |
+| `id` | `UUID` | Destination adaptor mapping ID |
 
-**Response:** `200 OK` — `ChannelSubscriptionDto`
+**Response:** `200 OK` — `DestinationAdaptorMappingDto`
 
 | Error Status | Condition |
 |:-------------|:----------|
-| `404` | Subscription not found |
+| `404` | Mapping not found |
 
 ---
 
-### 2.4 Update Channel Subscription
+### 2.4 Update Destination Adaptor Mapping
 
-**`PUT /v1/channel-subscriptions/{id}`** — Update status of an existing subscription.
+**`PUT /v1/destination-adaptor-mappings/{id}`** — Update status or receiver adaptor of an existing mapping.
 
 | Path Parameter | Type | Description |
 |:---------------|:-----|:------------|
-| `id` | `UUID` | Channel subscription ID |
+| `id` | `UUID` | Destination adaptor mapping ID |
 
 **Request Body**
 
 ```json
 {
+  "receiverAdaptorId": "c3d4e5f6-0003-4000-c000-000000000003",
   "status": "INACTIVE"
 }
 ```
 
-> **Note:** `protocolDefinitionId`, `actionId`, `channel`, and `receiverAdaptorId` are immutable. To change routing, delete the subscription and create a new one.
+> **Note:** `destination` is immutable. To change the destination name, delete the mapping and create a new one.
 
 **Response:** `200 OK`
 
@@ -353,12 +338,9 @@ Channel Subscriptions define the **many-to-many routing** between protocol defin
 {
   "data": {
     "id": "d4e5f6a7-0001-4000-d000-000000000010",
-    "protocolDefinitionId": "550e8400-e29b-41d4-a716-446655440000",
-    "protocolCanonical": "http://openphc.org/fhir/PlanDefinition/anc-high-risk|2.1",
-    "actionId": "anc-visit-2",
-    "channel": "supervisor",
-    "receiverAdaptorId": "c3d4e5f6-0001-4000-c000-000000000001",
-    "receiverAdaptorName": "Kigali South SMS Gateway",
+    "destination": "supervisor",
+    "receiverAdaptorId": "c3d4e5f6-0003-4000-c000-000000000003",
+    "receiverAdaptorName": "New SMS Gateway",
     "status": "INACTIVE",
     "createdAt": "2026-03-25T10:00:00Z",
     "updatedAt": "2026-03-25T14:00:00Z"
@@ -369,34 +351,34 @@ Channel Subscriptions define the **many-to-many routing** between protocol defin
 | Error Status | Condition |
 |:-------------|:----------|
 | `400` | Invalid request body |
-| `404` | Subscription not found |
+| `404` | Mapping not found |
 
 ---
 
-### 2.5 Delete Channel Subscription
+### 2.5 Delete Destination Adaptor Mapping
 
-**`DELETE /v1/channel-subscriptions/{id}`** — Remove a channel subscription.
+**`DELETE /v1/destination-adaptor-mappings/{id}`** — Remove a destination-adaptor mapping.
 
 | Path Parameter | Type | Description |
 |:---------------|:-----|:------------|
-| `id` | `UUID` | Channel subscription ID |
+| `id` | `UUID` | Destination adaptor mapping ID |
 
 **Pre-conditions:**
-- Only subscriptions with no `PENDING` or `EXECUTING` intelligence deliveries can be deleted.
-- Subscriptions with historical intelligence deliveries (`DELIVERED`, `FAILED`, `CANCELLED`) can be deleted; the `intelligence_delivery.channel_subscription_id` FK is preserved (soft reference).
+- Only mappings with no `PENDING` or `EXECUTING` intelligence deliveries can be deleted.
+- Mappings with historical intelligence deliveries (`DELIVERED`, `FAILED`, `CANCELLED`) can be deleted; the `intelligence_delivery.destination_adaptor_mapping_id` FK is preserved (soft reference).
 
 **Response:** `204 No Content`
 
 | Error Status | Condition |
 |:-------------|:----------|
-| `404` | Subscription not found |
-| `422` | Subscription has active (PENDING/EXECUTING) intelligence deliveries |
+| `404` | Mapping not found |
+| `409` | Mapping has active (PENDING/EXECUTING) intelligence deliveries |
 
 ---
 
 ## 3. Receiver Adaptors
 
-Receiver Adaptors represent external **webhook endpoints** that receive intelligence actions. Routing from channels to adaptors is managed via Channel Subscriptions.
+Receiver Adaptors represent external **webhook endpoints** that receive intelligence actions. Routing from destinations to adaptors is managed via Destination Adaptor Mappings.
 
 **Required scope**: `admin` (all operations)
 
@@ -614,15 +596,15 @@ Receiver Adaptors represent external **webhook endpoints** that receive intellig
 | `id` | `UUID` | Receiver adaptor ID |
 
 **Pre-conditions:**
-- Only adaptors with no `PENDING` or `EXECUTING` intelligence deliveries (via channel subscriptions) can be deleted.
-- All channel subscriptions referencing this adaptor must be deleted or inactive first.
+- Only adaptors with no `PENDING` or `EXECUTING` intelligence deliveries (via destination-adaptor mappings) can be deleted.
+- All destination-adaptor mappings referencing this adaptor must be deleted or inactive first.
 
 **Response:** `204 No Content`
 
 | Error Status | Condition |
 |:-------------|:----------|
 | `404` | Receiver adaptor not found |
-| `422` | Adaptor has active intelligence deliveries or active channel subscriptions |
+| `409` | Adaptor has active intelligence deliveries or active destination-adaptor mappings |
 
 ---
 

@@ -21,6 +21,7 @@
 git clone <repository-url>
 cd cce-intelligence-service
 
+
 # Build (skip tests for fast iteration)
 ./gradlew build -x test
 
@@ -30,7 +31,7 @@ cd cce-intelligence-service
 
 ### 2.2 Start Infrastructure
 
-PostgreSQL, Kafka, and the shared database (`cce_collector`) are deployed by the **CCE Collector Service**. All CCE services share the same database.
+PostgreSQL, Kafka, and the shared database (`ccedb`) are deployed by the **CCE Collector Service**. All CCE services share the same database.
 
 ```bash
 # Start shared infrastructure (PostgreSQL on port 5433 + Kafka on port 9092)
@@ -41,7 +42,7 @@ docker compose up -d
 docker compose ps
 ```
 
-> **Note:** The Intelligence Service does **not** read Compliance Service tables at runtime (fat event design). It only requires `protocol_definition` to exist in the shared database for the FK on `channel_subscription`. Ensure the Compliance Service has run its Flyway migrations before starting the Intelligence Service.
+> **Note:** The Intelligence Service does **not** read Compliance Service tables at runtime (fat event design). It only needs its own 4 tables.
 
 ### 2.3 Run the Application
 
@@ -78,7 +79,7 @@ All configuration can be overridden via environment variables:
 |---|---|---|
 | `DB_HOST` | `localhost` | PostgreSQL hostname |
 | `DB_PORT` | `5433` | PostgreSQL port (shared with collector service) |
-| `DB_NAME` | `cce_collector` | Shared database name (all CCE services) |
+| `DB_NAME` | `ccedb` | Shared database name (all CCE services) |
 | `DB_USERNAME` | `cce_user` | Database username (shared with collector service) |
 | `DB_PASSWORD` | `cce_pass` | Database password (shared with collector service) |
 | `DB_POOL_SIZE` | `10` | HikariCP max pool size |
@@ -99,8 +100,8 @@ All configuration can be overridden via environment variables:
 
 | Variable | Default | Description |
 |---|---|---|
-| `WEBHOOK_CONNECT_TIMEOUT_MS` | `10000` | WebClient connection timeout |
-| `WEBHOOK_READ_TIMEOUT_MS` | `30000` | WebClient read timeout |
+| `WEBHOOK_CONNECT_TIMEOUT_MS` | `5000` | WebClient connection timeout |
+| `WEBHOOK_READ_TIMEOUT_MS` | `10000` | WebClient read timeout |
 | `WEBHOOK_RETRY_ATTEMPTS` | `3` | Maximum delivery retry attempts |
 | `WEBHOOK_RETRY_INTERVAL_MS` | `2000` | Fixed delay between retries |
 
@@ -164,25 +165,25 @@ cce-intelligence-service/
 │   └── main/
 │       ├── java/org/openphc/cce/intelligence/
 │       │   ├── IntelligenceServiceApplication.java
-│       │   ├── config/          # Spring configuration (Kafka, WebClient, Async)
+│       │   ├── config/          # Spring configuration (Kafka, WebClient, Async, Properties, Metrics)
 │       │   ├── domain/          # Entities, enums, repositories
-│       │   │   ├── entity/      # IntelligenceDelivery, ReceiverAdaptor, ChannelSubscription, IntelligenceDeliveryAuditLog
+│       │   │   ├── entity/      # IntelligenceDelivery, ReceiverAdaptor, DestinationAdaptorMapping, IntelligenceDeliveryAuditLog
 │       │   │   ├── enums/       # IntelligenceDeliveryStatus, ActionType, IntelligenceSeverity
 │       │   │   └── repository/  # JPA repositories for all entities
 │       │   ├── engine/          # Intelligence processing pipeline
 │       │   │   ├── IntelligenceEngine.java   # Core orchestrator
-│       │   │   ├── FhirPayloadBuilder.java   # Builds FHIR CommunicationRequest or Task from trigger event
-│       │   │   ├── SubscriptionRouter.java   # Resolve channel → Receiver Adaptors via channel_subscription
-│       │   │   └── ActionDispatcher.java     # Fan-out deliver to subscribed Receiver Adaptors
+│       │   │   ├── FhirPayloadBuilder.java   # Builds FHIR CommunicationRequest / Task; passes through ServiceRequest payload
+│       │   │   ├── DestinationRouter.java    # Resolve destination → Receiver Adaptor via destination_adaptor_mapping
+│       │   │   └── ActionDispatcher.java     # Deliver to mapped Receiver Adaptor
 │       │   ├── kafka/           # Kafka consumer
 │       │   │   ├── config/      # Consumer factory, topic bindings
 │       │   │   ├── consumer/    # IntelligenceTriggerConsumer
 │       │   │   └── model/       # IntelligenceTriggerEvent
-│       │   ├── service/         # Business logic (IntelligenceDeliveryService, ChannelSubscriptionService,
+│       │   ├── service/         # Business logic (IntelligenceDeliveryService, DestinationAdaptorMappingService,
 │       │   │                    #   ReceiverAdaptorService, IntelligenceDeliveryAuditService)
 │       │   ├── webhook/         # WebClient-based webhook delivery
 │       │   └── web/             # REST controllers, DTOs, exception handler
-│       │       ├── controller/  # IntelligenceDeliveryController, ChannelSubscriptionController,
+│       │       ├── controller/  # IntelligenceDeliveryController, DestinationAdaptorMappingController,
 │       │       │                #   ReceiverAdaptorController
 │       │       ├── dto/         # Request/response DTOs
 │       │       └── exception/   # GlobalExceptionHandler
@@ -198,22 +199,22 @@ cce-intelligence-service/
 
 ## 5. Database Setup
 
-All CCE services share the same database (`cce_collector`) on the PostgreSQL instance deployed by the CCE Collector Service (port `5433`, user `cce_user`). The Intelligence Service owns **4 tables** and does **not** read any Compliance Service tables at runtime (fat event design).
+All CCE services share the same database (`ccedb`) on the PostgreSQL instance deployed by the CCE Collector Service (port `5433`, user `cce_user`). The Intelligence Service owns **4 tables** and does **not** read any Compliance Service tables at runtime (fat event design).
 
 ### 5.1 Table Ownership
 
 | Category | Tables |
 |---|---|
-| **Owned (4)** | `receiver_adaptor`, `channel_subscription`, `intelligence_delivery`, `intelligence_delivery_audit_log` |
-| **FK reference only** | `protocol_definition` — referenced by `channel_subscription.protocol_definition_id` FK; not read at runtime (routing uses `protocolDefinitionId` from the trigger event) |
+| **Owned (4)** | `receiver_adaptor`, `destination_adaptor_mapping`, `intelligence_delivery`, `intelligence_delivery_audit_log` |
+| **FK reference only** | None — the service is fully self-contained with the fat event design |
 
 ### 5.2 No Separate Database Creation Needed
 
 The database is created by the collector service's Docker Compose. The Intelligence Service only runs its Flyway migrations for its 4 owned tables on startup.
 
-### 5.3 Prerequisite: Compliance Service Schema
+### 5.3 No Cross-Service Dependencies
 
-The `channel_subscription` table has a FK to `protocol_definition(id)`, which is owned by the Compliance Service. Ensure the Compliance Service has run its Flyway migration that creates the `protocol_definition` table before starting the Intelligence Service. No other Compliance tables are accessed at runtime — the fat event design carries all metadata needed for trigger processing.
+The Intelligence Service is fully self-contained. The fat event design means no Compliance Service tables are referenced — not even as FKs. All metadata needed for routing and delivery is carried in the trigger event.
 
 ### 5.4 Flyway Migrations
 
@@ -221,7 +222,7 @@ Migrations are applied automatically on application startup. To run manually:
 
 ```bash
 # Using Gradle Flyway plugin (if configured)
-./gradlew flywayMigrate -Dflyway.url=jdbc:postgresql://localhost:5433/cce_collector \
+./gradlew flywayMigrate -Dflyway.url=jdbc:postgresql://localhost:5433/ccedb \
                         -Dflyway.user=cce_user \
                         -Dflyway.password=cce_pass
 
@@ -233,7 +234,7 @@ Migrations are applied automatically on application startup. To run manually:
 
 | Version | Description | Script |
 |---|---|---|
-| V1 | Intelligence service schema (`receiver_adaptor`, `channel_subscription`, `intelligence_delivery`, `intelligence_delivery_audit_log`) | `V1__intelligence_schema.sql` |
+| V1 | Intelligence service schema (`receiver_adaptor`, `destination_adaptor_mapping`, `intelligence_delivery`, `intelligence_delivery_audit_log`) | `V1__intelligence_schema.sql` |
 
 ## 6. Docker Build
 
@@ -249,7 +250,7 @@ docker run -d \
   -p 8085:8085 \
   -e DB_HOST=host.docker.internal \
   -e DB_PORT=5433 \
-  -e DB_NAME=cce_collector \
+  -e DB_NAME=ccedb \
   -e DB_USERNAME=cce_user \
   -e DB_PASSWORD=cce_pass \
   -e KAFKA_BOOTSTRAP_SERVERS=host.docker.internal:9092 \
@@ -278,7 +279,7 @@ Stage 2: Runtime (eclipse-temurin:21-jre-alpine)
 | `./gradlew build -x test` | Build without tests |
 | `./gradlew build` | Build + run unit tests |
 | `./gradlew test` | Run unit tests only |
-| `./gradlew integrationTest` | Run integration tests (EmbeddedKafka + H2) |
+| `./gradlew integrationTest` | Run integration tests (H2 + Mocks) |
 | `./gradlew test jacocoTestReport` | Unit tests + coverage report |
 | `./gradlew dependencies` | Show dependency tree |
 | `./gradlew bootRun` | Run application via Gradle |
@@ -292,13 +293,15 @@ Stage 2: Runtime (eclipse-temurin:21-jre-alpine)
 | `spring-boot-starter-test` | JUnit 5, Mockito, AssertJ |
 | `spring-kafka-test` | Kafka consumer test utilities |
 | `okhttp3:mockwebserver` | Mock webhook endpoints for delivery tests |
+| `h2` | In-memory database for integration tests |
+| `awaitility` | Async test assertion helpers |
 
 ### 8.2 Test Categories
 
 | Category | Location | Infrastructure |
 |---|---|---|
 | Unit tests | `src/test/java` | Mocked dependencies |
-| Integration tests | `src/integrationTest/java` | EmbeddedKafka + H2 in-memory (PostgreSQL mode) |
+| Integration tests | `src/integrationTest/java` | H2 in-memory DB + @MockBean (no containers) |
 | API tests | `src/test/java` | MockMvc |
 | Webhook tests | `src/test/java` | OkHttp MockWebServer |
 
