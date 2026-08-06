@@ -55,6 +55,12 @@ services:
       CCE_OPSALERT_TIER1_THRESHOLD_MINUTES: ${CCE_OPSALERT_TIER1_THRESHOLD_MINUTES}
       CCE_OPSALERT_TIER2_THRESHOLD_MINUTES: ${CCE_OPSALERT_TIER2_THRESHOLD_MINUTES}
       CCE_OPSALERT_TIER3_THRESHOLD_MINUTES: ${CCE_OPSALERT_TIER3_THRESHOLD_MINUTES}
+      # Optional — every tier defaults to no cc (see api-reference.md), so a plain passthrough is
+      # safe for all three: unset resolves to the same "no cc" the app would pick anyway.
+      # Comma-separated for more than one address per tier.
+      CCE_OPSALERT_TIER1_CC: ${CCE_OPSALERT_TIER1_CC:-}
+      CCE_OPSALERT_TIER2_CC: ${CCE_OPSALERT_TIER2_CC:-}
+      CCE_OPSALERT_TIER3_CC: ${CCE_OPSALERT_TIER3_CC:-}
       SERVER_PORT: 8085
     ports:
       # Host 8092, matching this service's existing convention on this branch — not 8085, which

@@ -75,14 +75,20 @@ management:
 #   - subject: operational tuning. Has a `:default` matching the PRD's current copy, so the
 #     service is correct out-of-the-box with zero configuration; set the env var only to
 #     override. A missing one here just falls back to known-correct copy, not a silent misdirect.
-#   - cc: its own dedicated per-tier var (CCE_OPSALERT_TIERn_CC), defaulting to the natural
-#     escalation chain — tier 1 cc's nobody (empty default), tier 2 cc's tier 1's own recipient,
-#     tier 3 cc's tiers 2 and 1's — via a *nested* placeholder default (confirmed empirically:
-#     Spring resolves ${OUTER:${INNER}} recursively, including two nested refs joined by a
-#     literal comma). Overriding CCE_OPSALERT_TIERn_CC replaces that chain entirely rather than
-#     adding to it. Every to/cc value — single address or comma-separated list — is parsed via
-#     the same jakarta.mail address-list parser at startup (TierConfig) and at send (Email-
-#     Dispatcher), so adding/removing a cc recipient is an env var change, not a YAML edit.
+#   - cc: its own dedicated per-tier var (CCE_OPSALERT_TIERn_CC), the same empty default for
+#     every tier. This used to default tier 2/3 to a nested-placeholder "escalation chain" (tier 2
+#     cc's tier 1's own address, tier 3 cc's tiers 2 and 1's), which worked correctly but was
+#     genuinely unsafe to expose as an ordinary configurable env var the way to/subject/threshold
+#     are: a chain default is only safe if every layer between Infisical and the app either
+#     supplies a real value or leaves the var genuinely absent — anything that passes it through
+#     as unset-but-present (which is the default behavior of docker-compose interpolation and
+#     envsubst alike) silently replaces the chain with "no cc" instead of falling back to it. A
+#     flat empty default has no such trap: unconfigured always means no cc, configured always
+#     means exactly what was configured. If tier 2/3 should still cc an earlier tier, that's now
+#     an explicit, ordinary value in CCE_OPSALERT_TIERn_CC, ideally set once and left alone.
+#     Every to/cc value — single address or comma-separated list — is parsed via the same
+#     jakarta.mail address-list parser at startup (TierConfig) and at send (EmailDispatcher), so
+#     adding/removing a cc recipient is an env var change, not a YAML edit.
 #
 # Concrete values (including the current test-inbox convenience of pointing all three at one
 # address, and shorter local thresholds) live only in application-local.yml, git-ignored.
@@ -106,7 +112,7 @@ cce:
             subject: "${CCE_OPSALERT_TIER2_SUBJECT:CCE Operational Escalation: eBuzima-HIE transaction interruption unresolved for {duration}}"
             to: ${ALERT_EMAIL_TIER2}
             to-name: ${ALERT_NAME_TIER2}
-            cc: "${CCE_OPSALERT_TIER2_CC:${ALERT_EMAIL_TIER1}}"
+            cc: "${CCE_OPSALERT_TIER2_CC:}"
             template: tier2
           - tier: 3
             threshold-minutes: ${CCE_OPSALERT_TIER3_THRESHOLD_MINUTES}
@@ -114,5 +120,5 @@ cce:
             subject: "${CCE_OPSALERT_TIER3_SUBJECT:CCE Leadership Escalation: eBuzima-HIE transaction interruption unresolved for {duration}}"
             to: ${ALERT_EMAIL_TIER3}
             to-name: ${ALERT_NAME_TIER3}
-            cc: "${CCE_OPSALERT_TIER3_CC:${ALERT_EMAIL_TIER2},${ALERT_EMAIL_TIER1}}"
+            cc: "${CCE_OPSALERT_TIER3_CC:}"
             template: tier3

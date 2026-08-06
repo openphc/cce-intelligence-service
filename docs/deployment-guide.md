@@ -15,7 +15,7 @@
 | `ALERT_EMAIL_TIER1`, `ALERT_EMAIL_TIER2`, `ALERT_EMAIL_TIER3` | Real tier recipient addresses in production, named by tier position rather than by whoever currently holds it — **in this branch, all three currently point at one test address for verification, not the real distribution list; update before this goes anywhere near production traffic.** Required, no default — missing one fails startup. |
 | `ALERT_NAME_TIER1`, `ALERT_NAME_TIER2`, `ALERT_NAME_TIER3` | Recipient names shown in the email greeting/body — parameterized alongside the addresses, and named the same tier-position way, so a name *or role* change is a config update, never a template edit (see api-reference.md). Also required, no default. |
 | `CCE_OPSALERT_TIER1_THRESHOLD_MINUTES`, `_TIER2_`, `_TIER3_` | Minutes before each tier fires. Required, no default (same philosophy as the recipients above, not the subject/cc below) — missing one fails startup with a precise error naming the exact property, value, and YAML line (Spring's own numeric binding does this for free, no custom validation code needed; see api-reference.md) |
-| `CCE_OPSALERT_TIER1_CC`, `_TIER2_`, `_TIER3_` | Optional — tier 1 defaults to no Cc, tier 2 defaults to tier 1's `to`, tier 3 defaults to tiers 2 and 1's (the natural escalation chain); setting one **replaces** that tier's default entirely rather than adding to it |
+| `CCE_OPSALERT_TIER1_CC`, `_TIER2_`, `_TIER3_` | Optional — all three default to no Cc; set one explicitly to add recipients for that tier |
 | `CCE_OPSALERT_POLL_INTERVAL_MS` | Defaults to `300000` (5 minutes) |
 | `CCE_OPSALERT_TIER1_SUBJECT`, `_TIER2_`, `_TIER3_` | Optional — defaults to the current subject copy for each tier; set only to override |
 
@@ -30,7 +30,7 @@ Never bake real SMTP credentials or recipient addresses into a committed YAML fi
 
 If the value is malformed (a stray comma, a typo), the pod fails to start with a clear error naming the exact bad value (`TierConfig`'s startup validation, api-reference.md) rather than starting and silently failing every send afterward — so a bad edit is caught by the restart itself, not discovered later from a missing email.
 
-**One asymmetry to know when touching `CCE_OPSALERT_TIERn_CC`:** unlike `to`, it has a default — tier 2 defaults to cc'ing tier 1's recipient, tier 3 defaults to cc'ing tiers 2 and 1's (the escalation chain the PRD describes). Setting the env var **replaces** that default rather than adding to it. So adding one extra cc recipient to tier 3 without losing the built-in chain means setting `CCE_OPSALERT_TIER3_CC` to all three addresses explicitly (the two chain addresses plus the new one), not just the new one.
+`CCE_OPSALERT_TIERn_CC` has the same default for every tier — empty, no Cc. There's no built-in escalation chain to be aware of: if tier 2's email should also reach tier 1's recipient, that address needs to be in `CCE_OPSALERT_TIER2_CC` explicitly, same as configuring any other recipient.
 
 ## Concurrency / autoscaling implications
 
