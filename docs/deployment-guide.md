@@ -1,0 +1,49 @@
+# Deployment Guide
+
+## Infrastructure dependencies
+
+- **Shared Postgres (`ccedb`)** — this service's only datastore. Needs its own Flyway-migrated schema (auto-created on startup, `V1__notification_tracker.sql`) plus a **read-only grant on `collector-service`'s `inbound_event_log` table** (not owned by this service — see data-dictionary.md).
+- **SMTP** — any standard SMTP provider. Gmail with an App Password works for non-production testing; a real deployment should use whatever transactional-email provider the platform already trusts.
+- No Kafka dependency, no ClickHouse dependency, no dependency on `data-pipeline`'s CDC — deliberately, see architecture-overview.md.
+
+## Environment variables (production shape)
+
+| Variable | Notes |
+|---|---|
+| `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD` | Shared `ccedb` connection |
+| `SPRING_MAIL_HOST`, `SPRING_MAIL_PORT`, `SPRING_MAIL_USERNAME`, `SPRING_MAIL_PASSWORD` | SMTP |
+| `ALERT_EMAIL_TIER1`, `ALERT_EMAIL_TIER2`, `ALERT_EMAIL_TIER3` | Real tier recipient addresses in production, named by tier position rather than by whoever currently holds it — **in this branch, all three currently point at one test address for verification, not the real distribution list; update before this goes anywhere near production traffic.** Required, no default — missing one fails startup. |
+| `ALERT_NAME_TIER1`, `ALERT_NAME_TIER2`, `ALERT_NAME_TIER3` | Recipient names shown in the email greeting/body — parameterized alongside the addresses, and named the same tier-position way, so a name *or role* change is a config update, never a template edit (see api-reference.md). Also required, no default. |
+| `CCE_OPSALERT_TIER1_THRESHOLD_MINUTES`, `_TIER2_`, `_TIER3_` | Minutes before each tier fires. Required, no default (same philosophy as the recipients above, not the subject/cc below) — missing one fails startup with a precise error naming the exact property, value, and YAML line (Spring's own numeric binding does this for free, no custom validation code needed; see api-reference.md) |
+| `CCE_OPSALERT_TIER1_CC`, `_TIER2_`, `_TIER3_` | Optional — tier 1 defaults to no Cc, tier 2 defaults to tier 1's `to`, tier 3 defaults to tiers 2 and 1's (the natural escalation chain); setting one **replaces** that tier's default entirely rather than adding to it |
+| `CCE_OPSALERT_POLL_INTERVAL_MS` | Defaults to `300000` (5 minutes) |
+| `CCE_OPSALERT_TIER1_SUBJECT`, `_TIER2_`, `_TIER3_` | Optional — defaults to the current subject copy for each tier; set only to override |
+
+Never bake real SMTP credentials or recipient addresses into a committed YAML file — inject via the deployment platform's secret mechanism (Kubernetes `Secret` / `deploy-scripts`' existing `cce-secrets` pattern), matching how every other credential in this platform is handled.
+
+### Adding or removing a recipient on an already-deployed instance
+
+`ALERT_EMAIL_TIER1`/`_TIER2`/`_TIER3` (the `to`) and `CCE_OPSALERT_TIER1_CC`/`_TIER2_`/`_TIER3_` (the `cc`) each accept one address **or** a comma-separated list (`a@x.com,b@x.com`) — see api-reference.md. So the actual operator workflow is:
+
+1. Update the value in wherever the secret is sourced from (Infisical, the k8s `Secret`, `.env` — not the tracked `application.yml`).
+2. Restart the pod(s) so the new env var value is picked up — Spring reads env vars at startup, not on a live reload, so this is a rollout restart (`kubectl rollout restart deployment/cce-intelligence-service`), not a rebuild or a code deploy. No YAML file in this repo needs editing, and no new image needs building.
+
+If the value is malformed (a stray comma, a typo), the pod fails to start with a clear error naming the exact bad value (`TierConfig`'s startup validation, api-reference.md) rather than starting and silently failing every send afterward — so a bad edit is caught by the restart itself, not discovered later from a missing email.
+
+**One asymmetry to know when touching `CCE_OPSALERT_TIERn_CC`:** unlike `to`, it has a default — tier 2 defaults to cc'ing tier 1's recipient, tier 3 defaults to cc'ing tiers 2 and 1's (the escalation chain the PRD describes). Setting the env var **replaces** that default rather than adding to it. So adding one extra cc recipient to tier 3 without losing the built-in chain means setting `CCE_OPSALERT_TIER3_CC` to all three addresses explicitly (the two chain addresses plus the new one), not just the new one.
+
+## Concurrency / autoscaling implications
+
+If this service runs behind a Kubernetes `HorizontalPodAutoscaler` (as several services on this platform already do — `cce-collector-service`, `cce-compliance-service`, `cce-intelligence-service`'s own prod config, and `cce-insights-service` all have HPAs in `deploy-scripts/k8s/overlays/prod/cce-hpas.yaml`), the row-locking design (flow-diagrams.md) is what makes multiple replicas safe — every pod polls independently, and Postgres row locks prevent duplicate sends. No leader-election component is required, but the mail sender's connection/read timeout **must** be bounded (see below) since a hung SMTP call holds a database connection and row lock for its duration.
+
+## What still needs to change in `deploy-scripts` for a real deployment
+
+Not part of this repo's changes, called out so it isn't missed:
+
+- Add this service's SMTP + `ALERT_EMAIL_*` environment variables to its `docker-compose.yml` / k8s Deployment block, following the same pattern already used for other services' secrets.
+- Add a read-only Postgres grant for this service's DB user on `collector-service`'s `inbound_event_log` table (a one-line `GRANT SELECT` in whatever DB-provisioning script/migration owns cross-service grants today).
+- Confirm the mail sender's timeout settings are actually set (`spring.mail.properties.mail.smtp.connectiontimeout` / `.timeout` / `.writetimeout`) in whichever `application-*.yml` profile is used for that environment — this is the one setting that's load-bearing for the row-lock design, not just tidy (flow-diagrams.md has the worked example).
+
+## Health checks
+
+`GET /actuator/health` reflects Postgres connectivity. A deployment probe pointed at this is sufficient — there's no separate readiness concern specific to the ops-alerting logic itself (it degrades gracefully: if the DB is briefly unreachable, a tick simply fails and retries on the next scheduled run).

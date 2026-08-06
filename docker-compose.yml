@@ -1,0 +1,74 @@
+# Local development stack for cce-intelligence-service (RI-63 ops-alerting engine).
+#
+# Deliberately NOT self-contained with its own fresh Postgres, unlike collector-service's or
+# scheduler-service's compose files — this service reads collector-service's own
+# inbound_event_log table (IngestionGapEvaluator, docs/architecture-overview.md), which only
+# exists once collector-service's own Flyway migrations have run against it. A brand-new,
+# empty Postgres here would be missing that table entirely. So this connects to the SAME
+# already-running shared Postgres collector-service's own stack creates, rather than bringing
+# up a disconnected one of its own.
+#
+# Prerequisite: collector-service's docker-compose stack already running (its `postgres`
+# service — container cce-collector-postgres — is what this connects to, over the network its
+# compose file creates: cce-collector-service_default).
+#
+# Usage:
+#   cp .env.example .env   # fill in real SMTP + recipient values
+#   docker compose up -d --build
+#
+# In a sandboxed/restricted environment where Docker's default BuildKit builder doesn't honor
+# the `network: host` setting below (symptom: the build stage's `./gradlew dependencies` times
+# out reaching services.gradle.org even with that setting present), force the classic builder,
+# which does honor it: DOCKER_BUILDKIT=0 docker compose build && docker compose up -d
+services:
+  intelligence-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # Some sandboxed/restricted environments block the isolated network Docker's build step
+      # normally uses, which breaks `./gradlew dependencies` fetching the Gradle distribution
+      # inside the build stage — building on the host network instead works around that. Harmless
+      # elsewhere; a build step only ever fetches dependencies, it doesn't expose anything.
+      network: host
+    container_name: cce-intelligence-service
+    environment:
+      DB_HOST: ${DB_HOST:-cce-collector-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-ccedb}
+      DB_USERNAME: ${DB_USERNAME:-cce_user}
+      DB_PASSWORD: ${DB_PASSWORD:-cce_pass}
+      SPRING_MAIL_HOST: ${SPRING_MAIL_HOST:-smtp.gmail.com}
+      SPRING_MAIL_PORT: ${SPRING_MAIL_PORT:-587}
+      SPRING_MAIL_USERNAME: ${SPRING_MAIL_USERNAME}
+      SPRING_MAIL_PASSWORD: ${SPRING_MAIL_PASSWORD}
+      # Required, no default — see TierConfig's validation (docs/api-reference.md). Startup
+      # fails with a clear error naming the exact missing one if left unset.
+      ALERT_EMAIL_TIER1: ${ALERT_EMAIL_TIER1}
+      ALERT_NAME_TIER1: ${ALERT_NAME_TIER1}
+      ALERT_EMAIL_TIER2: ${ALERT_EMAIL_TIER2}
+      ALERT_NAME_TIER2: ${ALERT_NAME_TIER2}
+      ALERT_EMAIL_TIER3: ${ALERT_EMAIL_TIER3}
+      ALERT_NAME_TIER3: ${ALERT_NAME_TIER3}
+      # Required, no default, same as the recipients above — a `long` field, so Spring's own
+      # numeric binding rejects a missing/blank value with its own clear error naming the exact
+      # property, value, and YAML line. No custom validation code needed (see api-reference.md).
+      CCE_OPSALERT_TIER1_THRESHOLD_MINUTES: ${CCE_OPSALERT_TIER1_THRESHOLD_MINUTES}
+      CCE_OPSALERT_TIER2_THRESHOLD_MINUTES: ${CCE_OPSALERT_TIER2_THRESHOLD_MINUTES}
+      CCE_OPSALERT_TIER3_THRESHOLD_MINUTES: ${CCE_OPSALERT_TIER3_THRESHOLD_MINUTES}
+      SERVER_PORT: 8085
+    ports:
+      # Host 8092, matching this service's existing convention on this branch — not 8085, which
+      # collided with another already-running local service when this was first set up.
+      - "8092:8085"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8085/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    networks:
+      - cce-collector-service_default
+
+networks:
+  cce-collector-service_default:
+    external: true

@@ -1,0 +1,25 @@
+.git
+.gitignore
+.gradle
+build
+.idea
+*.iml
+*.ipr
+*.iws
+.vscode
+.settings
+.project
+.classpath
+.factorypath
+.DS_Store
+Thumbs.db
+*.log
+*.md
+!README.md
+docs/
+artifacts/
+
+# Real SMTP credentials for local testing — never bake these into an image (see
+# docs/developer-setup.md: "Never commit real SMTP credentials"). Runtime config for a real
+# deployment comes from env vars, not this file.
+src/main/resources/application-local.yml
