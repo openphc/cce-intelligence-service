@@ -3,6 +3,7 @@ package org.openphc.cce.intelligence.opsalert.notify;
 import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Component;
@@ -32,10 +33,18 @@ public class EmailDispatcher implements NotificationDispatcher {
 
     private final JavaMailSender mailSender;
 
+    // Must match the authenticated SMTP account: providers like Office365 reject a From that the
+    // authenticated mailbox isn't allowed to "Send As" (554 5.2.252 SendAsDenied) - without this,
+    // JavaMail falls back to a fabricated local address (<container-user>@<pod-hostname>), which
+    // is never authorized.
+    @Value("${spring.mail.username}")
+    private String fromAddress;
+
     @Override
     public void send(Recipient recipient, RenderedTemplate template) throws Exception {
         MimeMessage message = mailSender.createMimeMessage();
         MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+        helper.setFrom(fromAddress);
         helper.setTo(InternetAddress.parse(recipient.to()));
         if (recipient.cc() != null && !recipient.cc().isEmpty()) {
             List<InternetAddress> ccAddresses = new ArrayList<>();
