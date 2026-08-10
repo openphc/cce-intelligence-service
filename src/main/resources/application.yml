@@ -51,6 +51,15 @@ management:
       show-details: always
       probes:
         enabled: true
+  health:
+    # Spring Boot's mail health indicator opens a live SMTP connection on every health check -
+    # k8s probes hit this every ~10-15s, so this was hammering Office365 with a fresh connection
+    # attempt that often and taking the whole liveness/readiness check down with it whenever that
+    # connection was slow. SMTP reachability isn't the same thing as "is this pod alive" -
+    # AlertEscalationEngine already retries a failed send on its own (rolls back the tracker
+    # claim, tries again next tick), so this indicator being down was never actionable here.
+    mail:
+      enabled: false
   metrics:
     tags:
       application: cce-intelligence-service
