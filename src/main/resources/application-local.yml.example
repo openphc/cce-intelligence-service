@@ -1,0 +1,47 @@
+# Copy this file to application-local.yml (git-ignored) and fill in real values.
+# Run with: ./gradlew bootRun --args='--spring.profiles.active=local'
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/ccedb
+    username: cce_user
+    password: cce_pass
+  mail:
+    username: your-smtp-username
+    password: your-smtp-app-password
+
+# Spring's config binder replaces the whole `tiers` list rather than merging individual fields
+# across profile files, so this repeats every field (not just threshold-minutes) to stay correct —
+# only threshold-minutes and poll-interval-ms actually differ from application.yml's production
+# values, lowered so all 3 tiers are observable in a short local session instead of waiting real
+# hours. See docs/developer-setup.md.
+cce:
+  opsalert:
+    poll-interval-ms: 30000 # 30s, instead of the production 5m
+    alert-types:
+      INGESTION_GAP:
+        tiers:
+          - tier: 1
+            threshold-minutes: 1
+            channel: EMAIL
+            subject: "CCE Alert: No eBuzima-HIE transaction activity observed for {duration}"
+            to: shashank.akkasali@tarento.com
+            to-name: Patience
+            cc: []
+            template: tier1
+          - tier: 2
+            threshold-minutes: 2
+            channel: EMAIL
+            subject: "CCE Operational Escalation: eBuzima-HIE transaction interruption unresolved for {duration}"
+            to: shashank.akkasali@tarento.com
+            to-name: Claudel
+            cc: [shashank.akkasali@tarento.com]
+            template: tier2
+          - tier: 3
+            threshold-minutes: 3
+            channel: EMAIL
+            subject: "CCE Leadership Escalation: eBuzima-HIE transaction interruption unresolved for {duration}"
+            to: shashank.akkasali@tarento.com
+            to-name: Andrew
+            cc: [shashank.akkasali@tarento.com]
+            template: tier3

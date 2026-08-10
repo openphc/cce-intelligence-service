@@ -1,0 +1,124 @@
+server:
+  port: ${SERVER_PORT:8085}
+
+spring:
+  application:
+    name: cce-intelligence-service
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:ccedb}
+    username: ${DB_USERNAME:cce_user}
+    password: ${DB_PASSWORD:cce_pass}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      # A hung SMTP call holds a transaction (and this pool's connection) open — see
+      # docs/flow-diagrams.md "load-bearing, not just tidy". Kept comfortably above the mail
+      # timeouts below so a real leak is never masked by a timeout that's too tight.
+      leak-detection-threshold: 15000
+  flyway:
+    enabled: true
+    # This service shares ccedb with collector/compliance/scheduler/gateway, each of which
+    # tracks its own migration history under a distinct table for exactly this reason — without
+    # it, this service's V1 would collide with whichever other service's V1 happens to already
+    # be recorded under the default `flyway_schema_history` name on this same database.
+    table: flyway_schema_history_intelligence
+    baseline-on-migrate: true
+    baseline-version: "0"
+  mail:
+    host: ${SPRING_MAIL_HOST:smtp.gmail.com}
+    port: ${SPRING_MAIL_PORT:587}
+    username: ${SPRING_MAIL_USERNAME:}
+    password: ${SPRING_MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+          # Bounded on purpose — see docs/flow-diagrams.md. A hung SMTP server must fail fast,
+          # not hold the row lock (and DB connection) indefinitely.
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: cce-intelligence-service
+
+# RI-63 operational notification engine — see docs/api-reference.md for the full shape.
+#
+# Every tunable is a named env var, all named by tier position (TIER1/TIER2/TIER3), never by
+# whoever currently holds that tier — so a future name, role, or threshold change is always a
+# .env value change, never a variable rename or a template edit.
+#
+# Three different failure/default philosophies, by design:
+#   - to / to-name / threshold-minutes: required, no `:default`. A missing one fails application
+#     startup with a clear, precise message — for to/to-name via TierConfig's own compact
+#     constructor (necessary because Spring binds a nonsensical *string* like the literal
+#     unresolved "${ALERT_EMAIL_TIER1}" without complaint — String fields accept anything, so
+#     nothing catches a missing value on its own); for threshold-minutes, Spring's own numeric
+#     type conversion already does this for free — a `long` field rejects both a missing var's
+#     literal placeholder text and an empty string with its own clear binding-failure report
+#     (confirmed empirically: names the exact property path, value, and YAML line, no custom
+#     validation code needed). A wrong default for either would silently misdirect an alert or
+#     silently change escalation timing, which is worse than not starting.
+#   - subject: operational tuning. Has a `:default` matching the PRD's current copy, so the
+#     service is correct out-of-the-box with zero configuration; set the env var only to
+#     override. A missing one here just falls back to known-correct copy, not a silent misdirect.
+#   - cc: its own dedicated per-tier var (CCE_OPSALERT_TIERn_CC), the same empty default for
+#     every tier. This used to default tier 2/3 to a nested-placeholder "escalation chain" (tier 2
+#     cc's tier 1's own address, tier 3 cc's tiers 2 and 1's), which worked correctly but was
+#     genuinely unsafe to expose as an ordinary configurable env var the way to/subject/threshold
+#     are: a chain default is only safe if every layer between Infisical and the app either
+#     supplies a real value or leaves the var genuinely absent — anything that passes it through
+#     as unset-but-present (which is the default behavior of docker-compose interpolation and
+#     envsubst alike) silently replaces the chain with "no cc" instead of falling back to it. A
+#     flat empty default has no such trap: unconfigured always means no cc, configured always
+#     means exactly what was configured. If tier 2/3 should still cc an earlier tier, that's now
+#     an explicit, ordinary value in CCE_OPSALERT_TIERn_CC, ideally set once and left alone.
+#     Every to/cc value — single address or comma-separated list — is parsed via the same
+#     jakarta.mail address-list parser at startup (TierConfig) and at send (EmailDispatcher), so
+#     adding/removing a cc recipient is an env var change, not a YAML edit.
+#
+# Concrete values (including the current test-inbox convenience of pointing all three at one
+# address, and shorter local thresholds) live only in application-local.yml, git-ignored.
+cce:
+  opsalert:
+    poll-interval-ms: ${CCE_OPSALERT_POLL_INTERVAL_MS:300000}
+    alert-types:
+      INGESTION_GAP:
+        tiers:
+          - tier: 1
+            threshold-minutes: ${CCE_OPSALERT_TIER1_THRESHOLD_MINUTES}
+            channel: EMAIL
+            subject: "${CCE_OPSALERT_TIER1_SUBJECT:CCE Alert: No eBuzima-HIE transaction activity observed for {duration}}"
+            to: ${ALERT_EMAIL_TIER1}
+            to-name: ${ALERT_NAME_TIER1}
+            cc: "${CCE_OPSALERT_TIER1_CC:}"
+            template: tier1
+          - tier: 2
+            threshold-minutes: ${CCE_OPSALERT_TIER2_THRESHOLD_MINUTES}
+            channel: EMAIL
+            subject: "${CCE_OPSALERT_TIER2_SUBJECT:CCE Operational Escalation: eBuzima-HIE transaction interruption unresolved for {duration}}"
+            to: ${ALERT_EMAIL_TIER2}
+            to-name: ${ALERT_NAME_TIER2}
+            cc: "${CCE_OPSALERT_TIER2_CC:}"
+            template: tier2
+          - tier: 3
+            threshold-minutes: ${CCE_OPSALERT_TIER3_THRESHOLD_MINUTES}
+            channel: EMAIL
+            subject: "${CCE_OPSALERT_TIER3_SUBJECT:CCE Leadership Escalation: eBuzima-HIE transaction interruption unresolved for {duration}}"
+            to: ${ALERT_EMAIL_TIER3}
+            to-name: ${ALERT_NAME_TIER3}
+            cc: "${CCE_OPSALERT_TIER3_CC:}"
+            template: tier3

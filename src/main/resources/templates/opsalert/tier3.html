@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<body th:inline="text" style="margin:0;padding:0;background:#f4f4f4;font-family:Arial,Helvetica,sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f4;padding:24px 0;">
+  <tr><td align="center">
+    <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:6px;overflow:hidden;">
+      <tr><td style="background:#7f1d1d;padding:16px 24px;color:#ffffff;font-size:18px;font-weight:bold;">
+        CCE Leadership Escalation: eBuzima-HIE transaction interruption unresolved for [[${thresholdDuration}]]
+      </td></tr>
+      <tr><td style="padding:24px;color:#222222;font-size:14px;line-height:1.6;">
+        <p>Dear [[${recipientName}]],</p>
+        <p>This is a leadership escalation for a transaction-monitoring incident that remains unresolved [[${thresholdDuration}]] after the initial technical alert to [[${technicalContactName}]] and [[${sincePreviousTier}]] after the operational escalation to [[${operationalContactName}]].</p>
+
+        <table role="presentation" width="100%" cellpadding="8" cellspacing="0" style="border:1px solid #e5e5e5;border-radius:4px;margin:16px 0;font-size:13px;">
+          <tr style="background:#fef2f2;"><td style="font-weight:bold;width:45%;">Incident ID</td><td th:text="${incidentId}">INC-000000000000</td></tr>
+          <tr><td style="font-weight:bold;">Initial technical alert</td><td th:text="${initialTechnicalAlert}">—</td></tr>
+          <tr style="background:#fef2f2;"><td style="font-weight:bold;">Operational escalation</td><td th:text="${operationalEscalation}">—</td></tr>
+          <tr><td style="font-weight:bold;">Last successful transaction observed</td><td th:text="${lastSuccessfulTransaction}">—</td></tr>
+          <tr style="background:#fef2f2;"><td style="font-weight:bold;">Time without successful activity</td><td th:text="${timeWithoutActivity}">—</td></tr>
+          <tr><td style="font-weight:bold;">Monitored interface</td><td th:text="${monitoredInterface}">eBuzima to HIE production</td></tr>
+        </table>
+
+        <p style="font-weight:bold;margin-bottom:4px;">Leadership support requested:</p>
+        <ul style="margin-top:0;padding-left:20px;">
+          <li>Support prioritization of the technical investigation and resolution.</li>
+          <li>Confirm the accountable technical owner and expected resolution time.</li>
+          <li>Remove any cross-team blocker requiring leadership coordination.</li>
+        </ul>
+
+        <p>[[${operationalContactName}]] and [[${technicalContactName}]] remain copied for operational and technical follow-up. CCE will send no more than one leadership reminder per day while the incident remains unresolved.</p>
+
+        <p>Kind regards,<br/><strong>MOH Care Coordination Engine (CCE)</strong></p>
+        <p style="color:#777777;font-size:11px;font-style:italic;">Automated leadership escalation: this message contains transaction-monitoring information only and must not include patient or clinical data.</p>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>
