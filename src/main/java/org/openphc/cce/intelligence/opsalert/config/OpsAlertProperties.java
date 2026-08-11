@@ -8,12 +8,16 @@ import java.util.Map;
  * Binds {@code cce.opsalert.alert-types.*} — externalized so a new alert type or a threshold/recipient
  * change never requires an engine code change. See docs/api-reference.md.
  * <p>
- * {@code notificationsEnabled} is a kill switch on delivery only (default {@code true}) — set
- * {@code CCE_OPSALERT_NOTIFICATIONS_ENABLED=false} to stop actually sending without touching the
- * engine's own evaluation/tracking: incidents still open, still escalate through the tiers, and
- * still close on recovery, so nothing is lost or backlogged while notifications are muted, and
- * flipping it back on doesn't fire a flood of catch-up sends for whatever happened while it was
- * off. See AlertEscalationEngine.attemptTier.
+ * {@code notificationsEnabled} is a fully-silent kill switch (default {@code true}) — set
+ * {@code CCE_OPSALERT_NOTIFICATIONS_ENABLED=false} to skip the scheduled tick entirely: no
+ * evaluation, no tracker row, no state at all, as if the engine doesn't run while it's off.
+ * Whatever happens to the real condition during that window leaves no trace and isn't caught up
+ * on once re-enabled — the next tick starts fresh from whatever's true then. Deliberately not a
+ * "track quietly but don't send" switch: that alternative was considered and rejected because it
+ * would anchor tier 2/3 timing to the incident's true start even while muted, which is more
+ * correct in the abstract but means silence still carries hidden state — this flag is meant for
+ * "the feature itself is untrusted/off", not "mute delivery for a known window but keep watching".
+ * See AlertEscalationEngine.tick.
  */
 @ConfigurationProperties(prefix = "cce.opsalert")
 public record OpsAlertProperties(Map<String, AlertTypeConfig> alertTypes, boolean notificationsEnabled) {

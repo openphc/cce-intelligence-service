@@ -21,6 +21,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -28,9 +29,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Covers the {@code cce.opsalert.notifications-enabled} kill switch: disabled must suppress the
- * actual dispatch while still advancing the tracker, so re-enabling later doesn't cause a
- * backlog of catch-up sends for whatever happened while it was off.
+ * Covers the {@code cce.opsalert.notifications-enabled} kill switch: disabled must skip the tick
+ * entirely — no evaluation, no tracker row, no dispatch — not just suppress the send.
  */
 class AlertEscalationEngineTest {
 
@@ -78,11 +78,13 @@ class AlertEscalationEngineTest {
     }
 
     @Test
-    void suppressesDispatchButStillAdvancesTrackerWhenDisabled() throws Exception {
+    void skipsTheTickEntirelyWhenDisabled() throws Exception {
         engineWith(false).tick();
 
+        verify(evaluator, never()).evaluate();
+        verify(trackerRepository, never()).claimAndLock(any(), any());
+        verify(trackerRepository, never()).advanceTier(any(), anyInt());
         verify(dispatcher, never()).send(any(), any());
-        verify(trackerRepository).advanceTier(ROW_ID, 1);
     }
 
     @Test
@@ -94,14 +96,9 @@ class AlertEscalationEngineTest {
     }
 
     @Test
-    void suppressedSendIsCountedOnItsOwnMeter() {
+    void skippedTickIsCountedOnItsOwnMeter() {
         engineWith(false).tick();
 
-        assertThat(meterRegistry.get("cce.opsalert.notifications.suppressed")
-                .tag("alert_type", ALERT_TYPE)
-                .tag("tier", "1")
-                .counter()
-                .count())
-                .isEqualTo(1.0);
+        assertThat(meterRegistry.get("cce.opsalert.tick.skipped").counter().count()).isEqualTo(1.0);
     }
 }
