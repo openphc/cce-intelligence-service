@@ -19,7 +19,7 @@
 | `CCE_OPSALERT_POLL_INTERVAL_MS` | Defaults to `300000` (5 minutes) |
 | `CCE_OPSALERT_TIER1_SUBJECT`, `_TIER2_`, `_TIER3_` | Optional — defaults to the current subject copy for each tier; set only to override |
 | `CCE_OPSALERT_NOTIFICATIONS_ENABLED` | Fully-silent kill switch, default `true`. Set to `false` to skip the scheduled tick entirely — no evaluation, no tracker state, nothing dispatched (api-reference.md, "Operational controls"). Not the same as a "mute but keep watching" switch — nothing that happens while it's off is caught up on once it's back on. |
-| `CCE_OPSALERT_REPEAT_INTERVAL_MINUTES` | Optional, default `0` (disabled — escalation goes fully silent past the last tier, same as always). A positive value keeps resending the last tier's email every that-many minutes, measured from whichever send most recently happened, until the incident resolves — e.g. `1440` (24h) resends daily starting the day after the last tier first fired. See api-reference.md's "Operational controls". |
+| `CCE_OPSALERT_REPEAT_INTERVAL_MINUTES` | Optional, default `1440` (24h — on by default, not off). Keeps resending the last tier's email every that-many minutes, measured from whichever send most recently happened, until the incident resolves — resends daily starting the day after the last tier first fired at the default. Set `<= 0` explicitly to disable repeating instead. See api-reference.md's "Operational controls". |
 
 Never bake real SMTP credentials or recipient addresses into a committed YAML file — inject via the deployment platform's secret mechanism (Kubernetes `Secret` / `deploy-scripts`' existing `cce-secrets` pattern), matching how every other credential in this platform is handled.
 

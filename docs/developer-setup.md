@@ -24,7 +24,7 @@
 | `CCE_OPSALERT_TIER1_THRESHOLD_MINUTES` / `_TIER2_` / `_TIER3_` | Minutes before each tier fires | required, no default — startup fails with a clear error naming the exact property/value if unset (Spring's own numeric binding does this for free; see api-reference.md) |
 | `CCE_OPSALERT_TIER1_SUBJECT` / `_TIER2_` / `_TIER3_` | Email subject line for each tier — may contain the literal token `{duration}`, substituted with that tier's own threshold as natural language | optional — defaults to the current copy, only set to override |
 | `CCE_OPSALERT_NOTIFICATIONS_ENABLED` | Fully-silent kill switch — `false` skips the scheduled tick entirely (no evaluation, no tracker state, nothing sent) | optional, defaults to `true`; see api-reference.md's "Operational controls" for why it's silent rather than a "mute but keep tracking" switch |
-| `CCE_OPSALERT_REPEAT_INTERVAL_MINUTES` | Resends the last tier's email every this-many minutes (from whichever send most recently happened) once escalation reaches it, until the incident resolves | optional, defaults to `0` (disabled — no repeat, same as before this existed); see api-reference.md's "Operational controls" |
+| `CCE_OPSALERT_REPEAT_INTERVAL_MINUTES` | Resends the last tier's email every this-many minutes (from whichever send most recently happened) once escalation reaches it, until the incident resolves | optional, defaults to `1440` (24h — on by default; set `<= 0` explicitly to disable); see api-reference.md's "Operational controls" |
 
 `ALERT_EMAIL_TIER*` and `CCE_OPSALERT_TIER*_CC` both accept a single address or a comma-separated list (`a@x.com,b@x.com`) — see api-reference.md for how that's parsed and validated.
 

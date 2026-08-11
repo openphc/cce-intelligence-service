@@ -5,8 +5,12 @@ import java.util.Optional;
 
 public record AlertTypeConfig(List<TierConfig> tiers, long repeatIntervalMinutes) {
 
-    /** Disabled (no repeat) by default — existing callers/tests that don't care about the repeat
-     *  behavior don't need to know this field exists. */
+    /** Disabled (no repeat) by default for this constructor specifically — existing callers/tests
+     *  that don't care about the repeat behavior don't need to know this field exists. Not the
+     *  same as the production default: {@code application.yml}'s own binding for
+     *  {@code repeat-interval-minutes} defaults to 1440 (24h), since that's the confirmed
+     *  intended behavior; this constructor's 0 is purely a safe fallback for callers that never
+     *  mention this field at all. */
     public AlertTypeConfig(List<TierConfig> tiers) {
         this(tiers, 0);
     }
@@ -15,7 +19,7 @@ public record AlertTypeConfig(List<TierConfig> tiers, long repeatIntervalMinutes
      *  it every {@code repeatIntervalMinutes} (measured from {@code last_notified_at}, not from
      *  when the last tier first fired) until the incident resolves — see that class's
      *  {@code attemptRepeat}. {@code <= 0} means no repeat: the engine goes fully silent after the
-     *  last tier, same as before this existed. */
+     *  last tier, same as before this existed — the production default is 1440 (24h), not this. */
     public boolean hasRepeat() {
         return repeatIntervalMinutes > 0;
     }

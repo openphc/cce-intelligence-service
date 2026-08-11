@@ -111,9 +111,11 @@ cce:
         # Once tier 3 (the last configured tier) has sent, keep resending it every this-many
         # minutes — measured from last_notified_at, i.e. from whichever send (tier 3's first send,
         # or a later repeat of it) most recently happened, not from tier 3's original send time —
-        # until the incident resolves. <= 0 (the default) means no repeat: fully silent after the
-        # last tier, same as before this existed. See AlertEscalationEngine.attemptRepeat.
-        repeat-interval-minutes: ${CCE_OPSALERT_REPEAT_INTERVAL_MINUTES:0}
+        # until the incident resolves. Defaults to 1440 (24h — confirmed spec: "daily 24 hours
+        # from the last mail sent"), not disabled, so this is the PRD's actual intended behavior
+        # out of the box; set <= 0 explicitly to turn repeating off instead. See
+        # AlertEscalationEngine.attemptRepeat.
+        repeat-interval-minutes: ${CCE_OPSALERT_REPEAT_INTERVAL_MINUTES:1440}
         tiers:
           - tier: 1
             threshold-minutes: ${CCE_OPSALERT_TIER1_THRESHOLD_MINUTES}
