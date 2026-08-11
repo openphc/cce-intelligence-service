@@ -95,13 +95,22 @@ public interface NotificationDispatcher {
 
 `EmailDispatcher` (Spring Mail + Thymeleaf) is the only implementation today. A `WhatsAppDispatcher`/`SmsDispatcher` implements the same interface later — the escalation engine only ever calls `send()`, indifferent to what's underneath.
 
+**`From` is always `spring.mail.username`, never left to JavaMail's own default.** Confirmed the hard way: without an explicit `helper.setFrom(...)`, JavaMail fabricates a From address from the local system identity (`<container-user>@<pod-hostname>` under Kubernetes) rather than leaving it blank. Office365 rejected that outright — `554 5.2.252 SendAsDenied`, since the authenticated mailbox has no "Send As" permission for a hostname it's never heard of. Setting `From` to the same address the SMTP session authenticates as is the one value guaranteed to be authorized to send as itself, for any provider's permission model — see `EmailDispatcherTest.setsFromToTheConfiguredSmtpUsername`.
+
+## Operational controls
+
+### `cce.opsalert.notifications-enabled` (`CCE_OPSALERT_NOTIFICATIONS_ENABLED`, default `true`)
+
+A fully-silent kill switch, checked once at the top of `AlertEscalationEngine.tick()` — when `false`, the tick returns immediately: no evaluator runs, no tracker row is claimed or created, nothing is dispatched. Not a "keep tracking, just don't send" switch — that alternative was considered (still evaluate/advance the tracker, only skip the actual `dispatcher.send()` call) and rejected: it would anchor tier 2/3 timing to the incident's true start even while muted and leave a full audit trail in `notification_tracker` of what *would* have fired, which is more correct in the abstract but means "off" still carries hidden state. This flag is for "the feature itself is untrusted or being worked on," not "mute delivery for a known maintenance window but keep watching" — so whatever happens to the real condition while it's disabled leaves no trace and isn't caught up on once re-enabled; the next tick just starts fresh from whatever's true then.
+
 ## Observability surface
 
 Standard Spring Boot Actuator, exposed per `management.endpoints.web.exposure.include`:
 
-- `GET /actuator/health` — liveness/readiness, includes the Postgres connection this service depends on.
+- `GET /actuator/health` — liveness/readiness, includes the Postgres connection this service depends on. Deliberately **excludes** the mail health indicator (`management.health.mail.enabled: false`) — Spring Boot's default one opens a live SMTP connection to the configured host on every single health check, and Kubernetes probes hit this endpoint every ~10-15s. Confirmed live in UAT: that was making a fresh connection attempt to Office365 that often and taking the whole liveness/readiness check down (and the pod restarted by kubelet) whenever that connection was slow — SMTP reachability isn't the same signal as "is this pod alive," and a failed send is already retried by the engine itself on the next tick regardless of what `/actuator/health` says.
 - `GET /actuator/prometheus` — Micrometer metrics, including:
   - `cce.opsalert.dispatch.failures` (counter) — incremented when a dispatch attempt fails and the tracker rolls back (see flow-diagrams.md step 5). Tagged by `alert_type` and `tier`.
+  - `cce.opsalert.tick.skipped` (counter) — incremented each time a tick is skipped because `cce.opsalert.notifications-enabled=false` (see "Operational controls" above). Untagged — it's a blanket switch, not per-alert-type.
   - Standard JVM/HikariCP/Hibernate-free-JDBC pool metrics (connection pool usage matters here specifically because the row-lock design holds a connection open across the SMTP call — see deployment-guide.md).
 
 No custom `/v1/...` controllers exist for this feature. If a future need arises to inspect current incident state outside the database directly (e.g. "is there an open incident right now"), that would be a genuinely new addition, not something already implied by this design.
