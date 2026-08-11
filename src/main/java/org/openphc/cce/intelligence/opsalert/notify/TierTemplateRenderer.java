@@ -48,8 +48,15 @@ public class TierTemplateRenderer {
         if (row.openedAt() != null) {
             ctx.setVariable("initialTechnicalAlert", row.openedAt().format(DISPLAY_FORMAT));
         }
-        if (row.lastNotifiedAt() != null) {
-            ctx.setVariable("operationalEscalation", row.lastNotifiedAt().format(DISPLAY_FORMAT));
+        // Tier 2's send time, not "whatever was last sent": row.lastNotifiedAt() drifts forward
+        // on every repeat (attemptRepeat's own advanceTier call refreshes it too), so it can't be
+        // used here once a repeat has fired. Tier 2 always lands at openedAt + tier2's own
+        // threshold (see this engine's cumulative-timing invariant, AlertEscalationEngine's class
+        // javadoc) — computed the same deterministic way as operationalThreshold below, instead
+        // of read off a column that repeats keep moving.
+        if (row.openedAt() != null) {
+            config.findTier(2).ifPresent(t ->
+                    ctx.setVariable("operationalEscalation", row.openedAt().plusMinutes(t.thresholdMinutes()).format(DISPLAY_FORMAT)));
         }
 
         // Current recipient's own name, plus every other tier's contact name a template might

@@ -20,6 +20,7 @@ cce:
     poll-interval-ms: 30000 # 30s, instead of the production 5m
     alert-types:
       INGESTION_GAP:
+        repeat-interval-minutes: 1 # 1m, instead of the production 1440 (24h)
         tiers:
           - tier: 1
             threshold-minutes: 1

@@ -51,7 +51,7 @@ class AlertEscalationEngineIT extends PostgresIT {
         TierConfig tier3 = new TierConfig(3, TIER3_MINUTES, "EMAIL", "Tier 3 subject for {duration}",
                 "andrew@example.com", "Andrew", List.of("claudel@example.com", "patience@example.com"), "tier3");
         OpsAlertProperties properties = new OpsAlertProperties(
-                Map.of(ALERT_TYPE, new AlertTypeConfig(List.of(tier1, tier2, tier3))), true);
+                Map.of(ALERT_TYPE, new AlertTypeConfig(List.of(tier1, tier2, tier3), 0)), true);
 
         ClassLoaderTemplateResolver resolver = new ClassLoaderTemplateResolver();
         resolver.setPrefix("templates/");

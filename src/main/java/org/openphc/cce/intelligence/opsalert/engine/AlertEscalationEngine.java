@@ -32,6 +32,11 @@ import java.util.Map;
  * incident's start and not independently of each other — matching the PRD's own wording ("24
  * hours after this alert", "48 hours after the initial technical alert"), not three independent
  * absolute checkpoints.
+ * <p>
+ * Past the last configured tier, escalation stops but (optionally, per alert type — see
+ * {@link org.openphc.cce.intelligence.opsalert.config.AlertTypeConfig#repeatIntervalMinutes})
+ * notification doesn't have to: {@link #attemptRepeat} keeps resending the last tier on a fixed
+ * cadence measured from whichever send most recently happened, until the incident resolves.
  */
 @Component
 @Slf4j
@@ -126,6 +131,59 @@ public class AlertEscalationEngine {
                 break; // dispatch failed — stop catching up further this tick, next tick retries
             }
         }
+
+        attemptRepeat(alertType, evaluation.referenceKey(), config);
+    }
+
+    /**
+     * Once the last configured tier has been reached, keeps resending it every
+     * {@code repeatIntervalMinutes} (measured from {@code last_notified_at} — whichever send,
+     * first or a previous repeat, happened most recently) until the incident resolves. A no-op
+     * (cheap, safe to call every tick unconditionally) whenever repeat isn't configured for this
+     * alert type, or the tracker hasn't reached the last tier yet, or it's simply not due.
+     * <p>
+     * Deliberately not {@link #attemptTier} reused as-is: that method's own "already sent"
+     * guard (ingested from {@code row.currentTier() >= tier}) is exactly what a repeat needs to
+     * get past — {@code current_tier} never advances past the last tier, by design, so the
+     * decision to (re)send has to be "how long since last_notified_at", not "is this tier already
+     * marked sent." {@code advanceTier} is still the right call to record it, though — it just
+     * happens to be a same-value update to {@code current_tier} here, which is harmless.
+     */
+    private void attemptRepeat(String alertType, String referenceKey, AlertTypeConfig config) {
+        if (!config.hasRepeat()) {
+            return;
+        }
+        transactionTemplate.execute(status -> {
+            TrackerRow row = trackerRepository.claimAndLock(alertType, referenceKey);
+            int lastTier = config.lastTier();
+            if (row.currentTier() < lastTier) {
+                return null; // hasn't reached the last tier yet — nothing to repeat
+            }
+            long minutesSinceLastNotified = Duration.between(row.lastNotifiedAt(), OffsetDateTime.now()).toMinutes();
+            if (minutesSinceLastNotified < config.repeatIntervalMinutes()) {
+                return null; // not due yet — next tick re-checks
+            }
+
+            TierConfig tierConfig = config.tier(lastTier);
+            NotificationDispatcher dispatcher = dispatchersByChannel.get(tierConfig.channel());
+            if (dispatcher == null) {
+                throw new IllegalStateException("No NotificationDispatcher bean named '" + tierConfig.channel() + "'");
+            }
+
+            try {
+                RenderedTemplate rendered = templateRenderer.render(config, lastTier, referenceKey, row);
+                dispatcher.send(new Recipient(tierConfig.to(), tierConfig.cc()), rendered);
+                trackerRepository.advanceTier(row.id(), lastTier);
+                log.info("opsalert: resent {} tier {} (repeat, every {}m) to {} — subject: \"{}\"",
+                        alertType, lastTier, config.repeatIntervalMinutes(), tierConfig.to(), rendered.subject());
+            } catch (Exception e) {
+                log.warn("opsalert: repeat dispatch failed for {} tier {} — will retry next tick", alertType, lastTier, e);
+                meterRegistry.counter("cce.opsalert.dispatch.failures",
+                        "alert_type", alertType, "tier", String.valueOf(lastTier)).increment();
+                status.setRollbackOnly();
+            }
+            return null;
+        });
     }
 
     /**
