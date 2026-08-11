@@ -63,6 +63,15 @@ public class AlertEscalationEngine {
 
     @Scheduled(fixedDelayString = "${cce.opsalert.poll-interval-ms:300000}")
     public void tick() {
+        if (!properties.notificationsEnabled()) {
+            // Fully silent, not just muted: no evaluation, no tracker row, no state at all — as
+            // if the engine doesn't run this tick. Whatever happens to the real condition while
+            // disabled leaves no trace and isn't caught up on once re-enabled; see
+            // OpsAlertProperties' javadoc for why that's the intended tradeoff here.
+            log.info("opsalert: notifications disabled (cce.opsalert.notifications-enabled=false) — skipping this tick");
+            meterRegistry.counter("cce.opsalert.tick.skipped").increment();
+            return;
+        }
         for (AlertEvaluator evaluator : evaluators) {
             try {
                 runEvaluator(evaluator);

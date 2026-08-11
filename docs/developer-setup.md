@@ -20,9 +20,10 @@
 | `SPRING_MAIL_PASSWORD` | SMTP auth password (a Gmail **App Password**, not your account password) | — |
 | `ALERT_EMAIL_TIER1` / `ALERT_EMAIL_TIER2` / `ALERT_EMAIL_TIER3` | Tier recipient addresses — named by tier position, not by whoever currently holds it, so the variable name never goes stale when a person changes | for local testing, all three can point at one inbox |
 | `ALERT_NAME_TIER1` / `ALERT_NAME_TIER2` / `ALERT_NAME_TIER3` | Tier recipient **names** — used in the email greeting and any cross-tier mentions, e.g. "will notify Claudel" | required, no default — startup fails with a clear error naming the missing var if unset (see api-reference.md) |
-| `CCE_OPSALERT_TIER1_CC` / `_TIER2_` / `_TIER3_` | Extra Cc recipients for each tier | optional — tier 1 defaults to none, tier 2 defaults to tier 1's `to`, tier 3 defaults to tiers 2 and 1's; setting this **replaces** that default rather than adding to it (see api-reference.md) |
+| `CCE_OPSALERT_TIER1_CC` / `_TIER2_` / `_TIER3_` | Extra Cc recipients for each tier | optional — every tier defaults to none, no built-in escalation chain (a chain default used to exist for tiers 2/3, removed as a real trap once exposed as a configurable env var — see api-reference.md) |
 | `CCE_OPSALERT_TIER1_THRESHOLD_MINUTES` / `_TIER2_` / `_TIER3_` | Minutes before each tier fires | required, no default — startup fails with a clear error naming the exact property/value if unset (Spring's own numeric binding does this for free; see api-reference.md) |
 | `CCE_OPSALERT_TIER1_SUBJECT` / `_TIER2_` / `_TIER3_` | Email subject line for each tier — may contain the literal token `{duration}`, substituted with that tier's own threshold as natural language | optional — defaults to the current copy, only set to override |
+| `CCE_OPSALERT_NOTIFICATIONS_ENABLED` | Fully-silent kill switch — `false` skips the scheduled tick entirely (no evaluation, no tracker state, nothing sent) | optional, defaults to `true`; see api-reference.md's "Operational controls" for why it's silent rather than a "mute but keep tracking" switch |
 
 `ALERT_EMAIL_TIER*` and `CCE_OPSALERT_TIER*_CC` both accept a single address or a comma-separated list (`a@x.com,b@x.com`) — see api-reference.md for how that's parsed and validated.
 
@@ -73,7 +74,7 @@ Run two instances against the same `ccedb` (different ports), both with the same
 
 Two source sets, mirroring `cce-scheduler-service`'s convention:
 
-- **`./gradlew test`** — fast unit tests (`src/test/java`), no external services. Covers `TierConfig`'s validation (every config-mistake class found and fixed during RI-63's development: missing/unresolved env vars, malformed addresses, missing `channel`/`subject`/`template`), `AlertTypeConfig`, `AlertEvaluation`.
+- **`./gradlew test`** — fast unit tests (`src/test/java`), no external services. Covers `TierConfig`'s validation (every config-mistake class found and fixed during RI-63's development: missing/unresolved env vars, malformed addresses, missing `channel`/`subject`/`template`), `AlertTypeConfig`, `AlertEvaluation`, `EmailDispatcher` (From/To/Cc/subject/body on the actual `MimeMessage`, including the From-address fix — api-reference.md), and `AlertEscalationEngine`'s `notifications-enabled` kill switch (both states, plus the `cce.opsalert.tick.skipped` counter).
 - **`./gradlew integrationTest`** — Testcontainers-backed (`src/integrationTest/java`), spins up a real Postgres per test class (not H2 — `NotificationTrackerRepository`'s SQL depends on genuinely Postgres-specific behavior: a partial unique index as an `ON CONFLICT` target, `SELECT ... FOR UPDATE` locking, `to_char`). Covers:
   - `NotificationTrackerRepositoryIT` — dedup via `claimAndLock`, the `incident_id` sequence (including that it's independent per `alert_type`), `closeStale`, and a real concurrent-claim test (8 threads racing to create the same tracker, asserting exactly one row results) — the automated version of the manual two-instance check above.
   - `IngestionGapEvaluatorIT` — healthy/unhealthy detection, the `referenceKey`/threshold boundary.
