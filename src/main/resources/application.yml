@@ -108,6 +108,12 @@ cce:
     notifications-enabled: ${CCE_OPSALERT_NOTIFICATIONS_ENABLED:true}
     alert-types:
       INGESTION_GAP:
+        # Once tier 3 (the last configured tier) has sent, keep resending it every this-many
+        # minutes — measured from last_notified_at, i.e. from whichever send (tier 3's first send,
+        # or a later repeat of it) most recently happened, not from tier 3's original send time —
+        # until the incident resolves. <= 0 (the default) means no repeat: fully silent after the
+        # last tier, same as before this existed. See AlertEscalationEngine.attemptRepeat.
+        repeat-interval-minutes: ${CCE_OPSALERT_REPEAT_INTERVAL_MINUTES:0}
         tiers:
           - tier: 1
             threshold-minutes: ${CCE_OPSALERT_TIER1_THRESHOLD_MINUTES}
