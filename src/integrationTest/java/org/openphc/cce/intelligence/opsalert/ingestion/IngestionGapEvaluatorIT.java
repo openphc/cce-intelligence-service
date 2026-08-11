@@ -22,7 +22,7 @@ class IngestionGapEvaluatorIT extends PostgresIT {
         TierConfig tier1 = new TierConfig(1, TIER1_THRESHOLD_MINUTES, "EMAIL", "subject",
                 "to@example.com", "Name", List.of(), "tier1");
         OpsAlertProperties properties = new OpsAlertProperties(
-                Map.of("INGESTION_GAP", new AlertTypeConfig(List.of(tier1))), true);
+                Map.of("INGESTION_GAP", new AlertTypeConfig(List.of(tier1), 0)), true);
         return new IngestionGapEvaluator(jdbcTemplate, properties);
     }
 

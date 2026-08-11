@@ -5,15 +5,12 @@ import java.util.Optional;
 
 public record AlertTypeConfig(List<TierConfig> tiers, long repeatIntervalMinutes) {
 
-    /** Disabled (no repeat) by default for this constructor specifically — existing callers/tests
-     *  that don't care about the repeat behavior don't need to know this field exists. Not the
-     *  same as the production default: {@code application.yml}'s own binding for
-     *  {@code repeat-interval-minutes} defaults to 1440 (24h), since that's the confirmed
-     *  intended behavior; this constructor's 0 is purely a safe fallback for callers that never
-     *  mention this field at all. */
-    public AlertTypeConfig(List<TierConfig> tiers) {
-        this(tiers, 0);
-    }
+    // Deliberately no auxiliary single-arg constructor here, tempting as it is to spare existing
+    // tests the extra argument: Spring Boot's @ConfigurationProperties record binding failed
+    // outright with a second constructor present — the whole cce.opsalert.alert-types map bound
+    // to null instead of throwing, silently breaking every real (non-test) startup — confirmed
+    // live. A config-binding record needs exactly one constructor; every caller passes both
+    // fields explicitly instead. See application.yml for the actual production default (1440).
 
     /** Once the last configured tier has been sent, {@code AlertEscalationEngine} keeps resending
      *  it every {@code repeatIntervalMinutes} (measured from {@code last_notified_at}, not from

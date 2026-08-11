@@ -17,7 +17,7 @@ class AlertTypeConfigTest {
 
     @Test
     void findTierReturnsPresentForExistingTier() {
-        AlertTypeConfig config = new AlertTypeConfig(List.of(tier(1), tier(2), tier(3)));
+        AlertTypeConfig config = new AlertTypeConfig(List.of(tier(1), tier(2), tier(3)), 0);
         Optional<TierConfig> found = config.findTier(2);
         assertThat(found).isPresent();
         assertThat(found.get().tier()).isEqualTo(2);
@@ -25,19 +25,19 @@ class AlertTypeConfigTest {
 
     @Test
     void findTierReturnsEmptyForMissingTier() {
-        AlertTypeConfig config = new AlertTypeConfig(List.of(tier(1)));
+        AlertTypeConfig config = new AlertTypeConfig(List.of(tier(1)), 0);
         assertThat(config.findTier(2)).isEmpty();
     }
 
     @Test
     void tierReturnsConfigForExistingTier() {
-        AlertTypeConfig config = new AlertTypeConfig(List.of(tier(1), tier(2)));
+        AlertTypeConfig config = new AlertTypeConfig(List.of(tier(1), tier(2)), 0);
         assertThat(config.tier(1).template()).isEqualTo("template1");
     }
 
     @Test
     void tierThrowsIllegalStateForMissingTier() {
-        AlertTypeConfig config = new AlertTypeConfig(List.of(tier(1)));
+        AlertTypeConfig config = new AlertTypeConfig(List.of(tier(1)), 0);
         assertThatThrownBy(() -> config.tier(3))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("No tier 3");
@@ -45,13 +45,13 @@ class AlertTypeConfigTest {
 
     @Test
     void lastTierReturnsHighestConfiguredTierNumber() {
-        AlertTypeConfig config = new AlertTypeConfig(List.of(tier(1), tier(3), tier(2)));
+        AlertTypeConfig config = new AlertTypeConfig(List.of(tier(1), tier(3), tier(2)), 0);
         assertThat(config.lastTier()).isEqualTo(3);
     }
 
     @Test
     void lastTierReturnsZeroForEmptyTierList() {
-        AlertTypeConfig config = new AlertTypeConfig(List.of());
+        AlertTypeConfig config = new AlertTypeConfig(List.of(), 0);
         assertThat(config.lastTier()).isZero();
     }
 }

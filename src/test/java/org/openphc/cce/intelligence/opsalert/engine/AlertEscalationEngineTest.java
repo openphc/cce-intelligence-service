@@ -60,7 +60,7 @@ class AlertEscalationEngineTest {
 
     private AlertEscalationEngine engineWith(boolean notificationsEnabled) {
         TierConfig tier1 = new TierConfig(1, 240, "EMAIL", "subject", "tier1@example.org", "Tier1", List.of(), "tier1");
-        AlertTypeConfig config = new AlertTypeConfig(List.of(tier1));
+        AlertTypeConfig config = new AlertTypeConfig(List.of(tier1), 0);
         OpsAlertProperties properties = new OpsAlertProperties(Map.of(ALERT_TYPE, config), notificationsEnabled);
 
         TierTemplateRenderer renderer = mock(TierTemplateRenderer.class);
