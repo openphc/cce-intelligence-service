@@ -141,10 +141,20 @@ public class AlertEscalationEngine {
             }
 
             try {
-                RenderedTemplate rendered = templateRenderer.render(config, tier, referenceKey, row);
-                dispatcher.send(new Recipient(tierConfig.to(), tierConfig.cc()), rendered);
+                if (properties.notificationsEnabled()) {
+                    RenderedTemplate rendered = templateRenderer.render(config, tier, referenceKey, row);
+                    dispatcher.send(new Recipient(tierConfig.to(), tierConfig.cc()), rendered);
+                    log.info("opsalert: sent {} tier {} to {} — subject: \"{}\"", alertType, tier, tierConfig.to(), rendered.subject());
+                } else {
+                    // Tracker still advances exactly as if the send succeeded, so re-enabling
+                    // later doesn't fire a backlog of every tier the incident crossed while
+                    // suppressed — this is a mute switch on delivery, not a pause on the engine.
+                    log.info("opsalert: notifications disabled (cce.opsalert.notifications-enabled=false) — "
+                            + "suppressing {} tier {} to {}", alertType, tier, tierConfig.to());
+                    meterRegistry.counter("cce.opsalert.notifications.suppressed",
+                            "alert_type", alertType, "tier", String.valueOf(tier)).increment();
+                }
                 trackerRepository.advanceTier(row.id(), tier);
-                log.info("opsalert: sent {} tier {} to {} — subject: \"{}\"", alertType, tier, tierConfig.to(), rendered.subject());
                 return new TrackerRow(row.id(), tier, row.openedAt(), OffsetDateTime.now(), row.incidentId());
             } catch (Exception e) {
                 log.warn("opsalert: dispatch failed for {} tier {} — will retry next tick", alertType, tier, e);

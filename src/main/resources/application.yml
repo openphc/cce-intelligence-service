@@ -104,6 +104,8 @@ management:
 cce:
   opsalert:
     poll-interval-ms: ${CCE_OPSALERT_POLL_INTERVAL_MS:300000}
+    # Kill switch on delivery only — see OpsAlertProperties' javadoc. Defaults to true (sending).
+    notifications-enabled: ${CCE_OPSALERT_NOTIFICATIONS_ENABLED:true}
     alert-types:
       INGESTION_GAP:
         tiers:
