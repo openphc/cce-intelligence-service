@@ -55,6 +55,11 @@ services:
       CCE_OPSALERT_TIER1_THRESHOLD_MINUTES: ${CCE_OPSALERT_TIER1_THRESHOLD_MINUTES}
       CCE_OPSALERT_TIER2_THRESHOLD_MINUTES: ${CCE_OPSALERT_TIER2_THRESHOLD_MINUTES}
       CCE_OPSALERT_TIER3_THRESHOLD_MINUTES: ${CCE_OPSALERT_TIER3_THRESHOLD_MINUTES}
+      # Optional, safe :-defaults for local convenience (matching the app's own defaults) — lower
+      # these in .env for a fast local demo instead of waiting real production hours/a full day.
+      CCE_OPSALERT_POLL_INTERVAL_MS: ${CCE_OPSALERT_POLL_INTERVAL_MS:-300000}
+      CCE_OPSALERT_NOTIFICATIONS_ENABLED: ${CCE_OPSALERT_NOTIFICATIONS_ENABLED:-true}
+      CCE_OPSALERT_REPEAT_INTERVAL_MINUTES: ${CCE_OPSALERT_REPEAT_INTERVAL_MINUTES:-1440}
       # Optional — every tier defaults to no cc (see api-reference.md), so a plain passthrough is
       # safe for all three: unset resolves to the same "no cc" the app would pick anyway.
       # Comma-separated for more than one address per tier.
