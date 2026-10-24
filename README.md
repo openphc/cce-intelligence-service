@@ -1,16 +1,16 @@
 # CCE Intelligence Service
 
-The **delivery engine** of the CCE platform. Consumes **self-contained** intelligence trigger events from the Compliance Service via Kafka, builds **FHIR R4-compliant payloads** (`CommunicationRequest` / `Task`), resolves routing via **channel subscriptions** (with step-level granularity), and delivers actions to registered **Receiver Adaptors** via webhook.
+The **delivery engine** of the CCE platform. Consumes **self-contained** intelligence trigger events from the Compliance Service via Kafka, builds **FHIR R4-compliant payloads** (`CommunicationRequest` / `Task` / `ServiceRequest` passthrough), resolves routing via **destination-adaptor mappings**, and delivers actions to registered **Receiver Adaptors** via webhook.
 
-> The Compliance Service evaluates *when* and *what* to act on, resolving all metadata into a self-contained trigger event. This service handles *where* (step-level routing via channel subscriptions) and *how* (FHIR payload + webhook delivery) — with **zero Compliance table reads** on the hot path.
+> The Compliance Service evaluates *when* and *what* to act on, resolving all metadata into a self-contained trigger event. This service handles *where* (destination-based routing) and *how* (FHIR payload + webhook delivery) — with **zero Compliance table reads** on the hot path.
 
 ## Architecture
 
 ```
 Compliance Service → Kafka → Intelligence Consumer → Intelligence Engine
-  → Build FHIR Payload from trigger event (CommunicationRequest or Task)
-  → Resolve Channel Subscriptions (protocol × action_id × channel)
-  → Fan-out Webhook Delivery → Receiver Adaptors
+  → Build FHIR Payload from trigger event (CommunicationRequest / Task / ServiceRequest passthrough)
+  → Resolve Destination → Receiver Adaptor (via destination_adaptor_mapping)
+  → Webhook Delivery → Receiver Adaptor
 ```
 
 ## Tech Stack
@@ -20,7 +20,7 @@ Compliance Service → Kafka → Intelligence Consumer → Intelligence Engine
 | Language | Java 21 (LTS) |
 | Framework | Spring Boot 3.4.x |
 | Build | Gradle 8.x |
-| Database | PostgreSQL 16+ (shared `cce_collector`) |
+| Database | PostgreSQL 16+ (shared `ccedb`) |
 | Messaging | Apache Kafka 3.7+ (KRaft) |
 | HTTP Client | Spring WebClient |
 | Observability | Micrometer + Prometheus |
@@ -33,7 +33,7 @@ docker compose up -d
 ./gradlew bootRun
 ```
 
-Health check: `http://localhost:8083/actuator/health`
+Health check: `http://localhost:8085/actuator/health`
 
 ## Database
 
@@ -43,7 +43,7 @@ The service owns 4 tables (zero read-only Compliance dependencies at runtime):
 |-------|-------|--------|
 | `intelligence_delivery` | Intelligence | Delivery lifecycle per (intelligence_event × adaptor) |
 | `receiver_adaptor` | Intelligence | Registered webhook endpoints |
-| `channel_subscription` | Intelligence | Many-to-many routing map (protocol × action_id × channel → adaptors) |
+| `destination_adaptor_mapping` | Intelligence | 1:1 routing map (destination → adaptor) |
 | `intelligence_delivery_audit_log` | Intelligence | Audit trail |
 
 ## Kafka Topics
@@ -59,26 +59,30 @@ All requests arrive via the **CCE Gateway Service** (pre-authenticated).
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/v1/intelligence-deliveries` | List intelligence deliveries (filtered) |
+| `GET` | `/v1/intelligence-deliveries` | List intelligence deliveries (filtered, paginated) |
 | `GET` | `/v1/intelligence-deliveries/{id}` | Get intelligence delivery by ID |
+| `GET` | `/v1/intelligence-deliveries/{id}/audit` | Get delivery audit trail |
 | `POST` | `/v1/intelligence-deliveries/{id}/cancel` | Cancel a intelligence delivery |
-| `GET` | `/v1/receiver-adaptors` | List receiver adaptors |
+| `GET` | `/v1/receiver-adaptors` | List receiver adaptors (optional `?status=` filter) |
+| `GET` | `/v1/receiver-adaptors/{id}` | Get receiver adaptor by ID |
 | `POST` | `/v1/receiver-adaptors` | Register a receiver adaptor |
 | `PUT` | `/v1/receiver-adaptors/{id}` | Update a receiver adaptor |
 | `DELETE` | `/v1/receiver-adaptors/{id}` | Delete a receiver adaptor |
-| `GET` | `/v1/channel-subscriptions` | List channel subscriptions |
-| `POST` | `/v1/channel-subscriptions` | Create a channel subscription |
-| `PUT` | `/v1/channel-subscriptions/{id}` | Update a channel subscription |
-| `DELETE` | `/v1/channel-subscriptions/{id}` | Delete a channel subscription |
+| `GET` | `/v1/destination-adaptor-mappings` | List destination-adaptor mappings |
+| `GET` | `/v1/destination-adaptor-mappings/{id}` | Get mapping by ID |
+| `POST` | `/v1/destination-adaptor-mappings` | Create a destination-adaptor mapping |
+| `PUT` | `/v1/destination-adaptor-mappings/{id}` | Update mapping status |
+| `DELETE` | `/v1/destination-adaptor-mappings/{id}` | Delete a mapping |
 
 ## Project Structure
 
-~26 source files across 10 packages. Key components:
+44 source files across 10 packages. Key components:
 
 - **`engine/IntelligenceEngine`** — Core orchestrator (trigger → payload → route → deliver)
-- **`engine/FhirPayloadBuilder`** — Builds FHIR CommunicationRequest or Task from trigger event fields
-- **`engine/SubscriptionRouter`** — Resolves (protocol, actionId, channel) → adaptors with step-level precedence
-- **`engine/ActionDispatcher`** — Fan-out webhook delivery
+- **`engine/FhirPayloadBuilder`** — Builds FHIR CommunicationRequest or Task; passes through original payload for ServiceRequest actions
+- **`engine/DestinationRouter`** — Resolves destination → Receiver Adaptor via `destination_adaptor_mapping`
+- **`engine/ActionDispatcher`** — Three-phase transactional webhook delivery
+- **`webhook/WebhookDeliveryClient`** — WebClient-based HTTP delivery with retry, HMAC signing, and per-adaptor config
 
 ## Documentation
 
