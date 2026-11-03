@@ -13,8 +13,9 @@ RUN chmod +x gradlew && ./gradlew dependencies --no-daemon
 # Copy source code
 COPY src/ src/
 
-# Build the application (skip tests — they run in CI)
-RUN ./gradlew build -x test --no-daemon
+# Build the executable jar only (tests run in CI). `build` would also emit a `-plain` jar, which
+# the runtime stage's cce-intelligence-service-*.jar COPY would then match twice and fail on.
+RUN ./gradlew bootJar --no-daemon
 
 # Stage 2: Runtime
 FROM eclipse-temurin:21-jre-alpine
