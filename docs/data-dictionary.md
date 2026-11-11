@@ -418,18 +418,25 @@ The FHIR R4-compliant resource sent to the Receiver Adaptor. Resource type depen
     "identifier": { "system": "http://openphc.org/fhir/patient-upid", "value": "260225-0002-5501" }
   },
   "about": [
-    { "reference": "PlanDefinition/anc-high-risk|2.1" },
-    { "display": "anc-visit-2" }
+    { "type": "PlanDefinition",
+      "identifier": { "system": "http://openphc.org/fhir/protocol-canonical",
+                      "value": "http://openphc.org/fhir/PlanDefinition/anc-high-risk|2.1" } },
+    { "identifier": { "system": "http://openphc.org/fhir/protocol-step-id", "value": "anc-visit-2" },
+      "display": "anc-visit-2" },
+    { "identifier": { "system": "http://openphc.org/fhir/intelligence-action-id", "value": "anc-visit-2-overdue-alert" },
+      "display": "ANC visit 2 overdue: contact the patient" }
   ],
   "payload": [{
-    "contentString": "[HIGH] ESCALATION for patient 260225-0002-5501 — step anc-visit-2 overdue (PlanDefinition/anc-high-risk|2.1)"
+    "contentString": "ANC visit 2 overdue: contact the patient"
   }],
+  "reasonCode": [{ "coding": [{ "system": "http://openphc.org/fhir/CodeSystem/cce-trigger-reason", "code": "overdue" }] }],
   "recipient": [{ "display": "supervisor" }],
   "authoredOn": "2026-04-15T00:00:05Z",
   "extension": [
     { "url": "http://openphc.org/fhir/StructureDefinition/cce-severity", "valueCode": "high" },
     { "url": "http://openphc.org/fhir/StructureDefinition/cce-intelligence-event-id", "valueId": "intelligence-event-uuid" },
-    { "url": "http://openphc.org/fhir/StructureDefinition/cce-step-state", "valueCode": "overdue" }
+    { "url": "http://openphc.org/fhir/StructureDefinition/cce-step-status", "valueCode": "not-started" },
+    { "url": "http://openphc.org/fhir/StructureDefinition/cce-sla-status", "valueCode": "overdue" }
   ]
 }
 ```

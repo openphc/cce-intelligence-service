@@ -250,7 +250,7 @@ class IntelligenceEndToEndIntegrationTest {
     @Test
     @Order(8)
     void testLateCompletionTrigger() {
-        IntelligenceTriggerEvent event = buildTriggerEvent(UUID.randomUUID(), "completed", "LOW", "CommunicationRequest", "action-overdue-check");
+        IntelligenceTriggerEvent event = buildTriggerEvent(UUID.randomUUID(), "completion", "LOW", "CommunicationRequest", "action-overdue-check");
         consumer.consume(event);
 
         assertThat(countDelivered()).isEqualTo(1);
@@ -276,7 +276,7 @@ class IntelligenceEndToEndIntegrationTest {
         extensions.forEach(ext -> extUrls.add(ext.get("url").asText()));
         assertThat(extUrls).contains(
                 "http://openphc.org/fhir/StructureDefinition/cce-severity",
-                "http://openphc.org/fhir/StructureDefinition/cce-step-state"
+                "http://openphc.org/fhir/StructureDefinition/cce-step-status"
         );
     }
 
@@ -306,7 +306,7 @@ class IntelligenceEndToEndIntegrationTest {
                 .build();
     }
 
-    private IntelligenceTriggerEvent buildTriggerEvent(UUID eventId, String stepState, String severity, String actionType, String actionId) {
+    private IntelligenceTriggerEvent buildTriggerEvent(UUID eventId, String triggerReason, String severity, String actionType, String actionId) {
         IntelligenceTriggerEvent event = new IntelligenceTriggerEvent();
         event.setId(UUID.randomUUID());
         event.setSubject("Patient/test-patient-123");
@@ -316,7 +316,8 @@ class IntelligenceEndToEndIntegrationTest {
         event.setActionType(actionType);
         event.setSeverity(severity);
         event.setIntelligenceDestination("sms");
-        event.setStepState(stepState);
+        event.setStepStatus("completion".equals(triggerReason) ? "completed" : "not-started");
+        event.setTriggerReason(triggerReason);
         event.setActionId(actionId);
         event.setProtocolCanonical("http://example.org/PlanDefinition/test-protocol");
         event.setDetectedAt(OffsetDateTime.now());

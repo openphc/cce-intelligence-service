@@ -254,9 +254,13 @@ IntelligenceTriggerEvent
   ├── severity ─────────────► FHIR priority mapping + extension
   ├── intelligenceDestination ► Routing lookup (destination_adaptor_mapping) + FHIR recipient
   ├── subject ──────────────► FHIR subject.identifier
-  ├── protocolCanonical ────► FHIR about[0].reference
-  ├── actionId ─────────────► FHIR about[1].display
-  ├── stepState ────────────► FHIR extension (cce-step-state)
+  ├── protocolCanonical ────► CommunicationRequest about[] (PlanDefinition, by identifier)
+  ├── actionId ─────────────► CommunicationRequest about[] (the step, by identifier)
+  ├── intelligenceActionId ─► CommunicationRequest about[] / Task focus (the action, by identifier)
+  ├── title ────────────────► payload.contentString / description (else a generated summary)
+  ├── triggerReason ────────► reasonCode (completion / overdue / missed / order_violation)
+  ├── stepStatus ───────────► FHIR extension (cce-step-status)
+  ├── slaStatus ────────────► FHIR extension (cce-sla-status)
   ├── detectedAt ───────────► FHIR authoredOn
   ├── eventPayload ─────────► If present AND actionType=ServiceRequest → passed through as-is (original FHIR payload from Compliance Service)
   ├── intelligenceEventId ───────► intelligence_delivery.intelligence_event_id (traceability)
@@ -290,91 +294,63 @@ The `actionType` is used in the FHIR payload's `category` / `code` coding, the `
 
 #### CommunicationRequest Payload
 
+An overdue alert from the Step SLA service:
+
 ```json
 {
   "resourceType": "CommunicationRequest",
-  "identifier": [{
-    "system": "http://openphc.org/fhir/intelligence-delivery-id",
-    "value": "aaaa-bbbb-cccc-dddd"
-  }],
   "status": "active",
   "priority": "urgent",
-  "category": [{
-    "coding": [{
-      "system": "http://openphc.org/fhir/CodeSystem/cce-action-type",
-      "code": "CommunicationRequest",
-      "display": "CommunicationRequest"
-    }]
-  }],
-  "subject": {
-    "identifier": { "system": "http://openphc.org/fhir/patient-upid", "value": "260225-0002-5501" }
-  },
+  "identifier": [{ "system": "http://openphc.org/fhir/intelligence-delivery-id", "value": "<delivery id>" }],
+  "category": [{ "coding": [{ "system": "http://openphc.org/fhir/CodeSystem/cce-action-type",
+                              "code": "CommunicationRequest", "display": "CommunicationRequest" }] }],
+  "subject": { "identifier": { "system": "http://openphc.org/fhir/patient-upid", "value": "patient-001" } },
   "about": [
-    { "reference": "PlanDefinition/anc-high-risk|2.1" },
-    { "display": "anc-visit-2" }
+    { "type": "PlanDefinition",
+      "identifier": { "system": "http://openphc.org/fhir/protocol-canonical",
+                      "value": "http://example.org/PlanDefinition/chronic-care|1.0.0" } },
+    { "identifier": { "system": "http://openphc.org/fhir/protocol-step-id", "value": "follow-up-visit" },
+      "display": "follow-up-visit" },
+    { "identifier": { "system": "http://openphc.org/fhir/intelligence-action-id", "value": "follow-up-visit-overdue-alert" },
+      "display": "Follow-up visit overdue: contact the patient" }
   ],
-  "payload": [{
-    "contentString": "[HIGH] CommunicationRequest for patient 260225-0002-5501 — step anc-visit-2 overdue (PlanDefinition/anc-high-risk|2.1)"
-  }],
-  "recipient": [{ "display": "supervisor" }],
-  "authoredOn": "2026-04-15T00:00:05Z",
+  "payload": [{ "contentString": "Follow-up visit overdue: contact the patient" }],
+  "reasonCode": [{ "coding": [{ "system": "http://openphc.org/fhir/CodeSystem/cce-trigger-reason", "code": "overdue" }] }],
+  "recipient": [{ "display": "care-team" }],
+  "authoredOn": "2026-11-03T05:18:20Z",
   "extension": [
-    {
-      "url": "http://openphc.org/fhir/StructureDefinition/cce-severity",
-      "valueCode": "high"
-    },
-    {
-      "url": "http://openphc.org/fhir/StructureDefinition/cce-intelligence-event-id",
-      "valueId": "intelligence-event-uuid"
-    },
-    {
-      "url": "http://openphc.org/fhir/StructureDefinition/cce-step-state",
-      "valueCode": "overdue"
-    }
+    { "url": "http://openphc.org/fhir/StructureDefinition/cce-severity", "valueCode": "high" },
+    { "url": "http://openphc.org/fhir/StructureDefinition/cce-intelligence-event-id", "valueId": "<intelligence_event_log id>" },
+    { "url": "http://openphc.org/fhir/StructureDefinition/cce-step-status", "valueCode": "not-started" },
+    { "url": "http://openphc.org/fhir/StructureDefinition/cce-sla-status", "valueCode": "overdue" }
   ]
 }
 ```
+
+The references in `about` are logical (by identifier): a canonical is not a resource id, so
+`PlanDefinition/<canonical>` would not be a valid literal reference.
 
 #### Task Payload
 
 ```json
 {
   "resourceType": "Task",
-  "identifier": [{
-    "system": "http://openphc.org/fhir/intelligence-delivery-id",
-    "value": "aaaa-bbbb-cccc-dddd"
-  }],
   "status": "requested",
   "intent": "order",
   "priority": "urgent",
-  "code": {
-    "coding": [{
-      "system": "http://openphc.org/fhir/CodeSystem/cce-action-type",
-      "code": "Task",
-      "display": "Task"
-    }]
-  },
-  "description": "[CRITICAL] Task for patient 260225-0002-5501 — step anc-visit-2 overdue (PlanDefinition/anc-high-risk|2.1)",
-  "for": {
-    "identifier": { "system": "http://openphc.org/fhir/patient-upid", "value": "260225-0002-5501" }
-  },
-  "authoredOn": "2026-04-15T00:00:05Z",
-  "extension": [
-    {
-      "url": "http://openphc.org/fhir/StructureDefinition/cce-severity",
-      "valueCode": "critical"
-    },
-    {
-      "url": "http://openphc.org/fhir/StructureDefinition/cce-protocol-canonical",
-      "valueCanonical": "PlanDefinition/anc-high-risk|2.1"
-    },
-    {
-      "url": "http://openphc.org/fhir/StructureDefinition/cce-action-id",
-      "valueString": "anc-visit-2"
-    }
-  ]
+  "identifier": [{ "system": "http://openphc.org/fhir/intelligence-delivery-id", "value": "<delivery id>" }],
+  "code": { "coding": [{ "system": "http://openphc.org/fhir/CodeSystem/cce-action-type", "code": "Task", "display": "Task" }] },
+  "for": { "identifier": { "system": "http://openphc.org/fhir/patient-upid", "value": "patient-001" } },
+  "focus": { "identifier": { "system": "http://openphc.org/fhir/intelligence-action-id", "value": "follow-up-visit-overdue-alert" },
+             "display": "Follow-up visit overdue: contact the patient" },
+  "description": "Follow-up visit overdue: contact the patient",
+  "reasonCode": { "coding": [{ "system": "http://openphc.org/fhir/CodeSystem/cce-trigger-reason", "code": "overdue" }] },
+  "authoredOn": "2026-11-03T05:18:20Z",
+  "extension": [ "…the same extensions as CommunicationRequest…" ]
 }
 ```
+
+`Task.reasonCode` is `0..1` (one CodeableConcept), where `CommunicationRequest.reasonCode` is `0..*`.
 
 #### FHIR Field Mapping
 
@@ -385,11 +361,17 @@ The `actionType` is used in the FHIR payload's `category` / `code` coding, the `
 | `priority` | Mapped from severity | Mapped from severity | `trigger.severity` |
 | `category` / `code` | Action type coding | Action type coding | `trigger.actionType` |
 | `subject` / `for` | Patient UPID | Patient UPID | `trigger.subject` |
-| `about` | Protocol + action ID | — | `trigger.protocolCanonical`, `trigger.actionId` |
-| `payload.contentString` / `description` | Auto-generated summary (includes stepState) | Auto-generated summary (includes stepState) | `FhirPayloadBuilder` |
+| `about` | Protocol, step and intelligence action, by identifier | — | `trigger.protocolCanonical`, `trigger.actionId`, `trigger.intelligenceActionId`, `trigger.title` |
+| `focus` | — | The intelligence action, by identifier | `trigger.intelligenceActionId`, `trigger.title` |
+| `payload.contentString` / `description` | The action's title, else a generated summary | Same | `trigger.title` |
+| `reasonCode` | Why it fired (array) | Why it fired (single) | `trigger.triggerReason` |
 | `recipient` | Destination name | — | `trigger.intelligenceDestination` |
-| `authoredOn` | Detection time | Detection time | `trigger.detectedAt` |
-| `extension.*` | Step state | Same | Trigger event fields |
+| `authoredOn` | Build time | Build time | `FhirPayloadBuilder` |
+| `extension` | Severity, event id, step status, SLA status | Same | Trigger event fields |
+
+Fields a trigger does not carry are left out — an untitled action gets the generated summary, a trigger
+without `triggerReason` or `intelligenceActionId` gets no `reasonCode` / `focus` — and an extension with no
+value is never written: FHIR forbids an element with neither a value nor children.
 
 #### Severity → FHIR Priority Mapping
 

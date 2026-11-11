@@ -35,44 +35,44 @@ class IntelligenceTriggerConsumerTest {
         consumer = new IntelligenceTriggerConsumer(engine, meterRegistry);
     }
 
-    private IntelligenceTriggerEvent event(String stepState) {
+    private IntelligenceTriggerEvent event(String triggerReason) {
         return IntelligenceTriggerEvent.builder()
                 .id(UUID.randomUUID())
                 .subject("Patient/1")
                 .intelligenceEventId(UUID.randomUUID())
                 .intelligenceDestination("dest-a")
-                .stepState(stepState)
+                .stepStatus("not-started")
+                .triggerReason(triggerReason)
                 .build();
     }
 
     @Test
     void consume_forwardsToEngineAndCountsReceived() {
-        IntelligenceTriggerEvent event = event("due");
+        IntelligenceTriggerEvent event = event("overdue");
 
         consumer.consume(event);
 
         verify(engine).processTrigger(event);
-        double count = meterRegistry.counter("cce.intelligence.triggers.received", "trigger_type", "step.due")
+        double count = meterRegistry.counter("cce.intelligence.triggers.received", "trigger_type", "deviation.overdue")
                 .count();
         assertThat(count).isEqualTo(1.0);
     }
 
     @Test
-    void consume_derivesTriggerTypeFromStepState() {
-        consumer.consume(event("overdue"));
-        consumer.consume(event("missed"));
-        consumer.consume(event("completed"));
-        consumer.consume(event(null));
+    void consume_derivesTriggerTypeFromTriggerReason() {
+        for (String reason : new String[] {"completion", "missed", "order_violation", "other", null}) {
+            consumer.consume(event(reason));
+        }
 
-        assertThat(meterRegistry.counter("cce.intelligence.triggers.received", "trigger_type", "deviation.overdue").count()).isEqualTo(1.0);
-        assertThat(meterRegistry.counter("cce.intelligence.triggers.received", "trigger_type", "deviation.missed").count()).isEqualTo(1.0);
         assertThat(meterRegistry.counter("cce.intelligence.triggers.received", "trigger_type", "step.completed").count()).isEqualTo(1.0);
-        assertThat(meterRegistry.counter("cce.intelligence.triggers.received", "trigger_type", "unknown").count()).isEqualTo(1.0);
+        assertThat(meterRegistry.counter("cce.intelligence.triggers.received", "trigger_type", "deviation.missed").count()).isEqualTo(1.0);
+        assertThat(meterRegistry.counter("cce.intelligence.triggers.received", "trigger_type", "deviation.order_violation").count()).isEqualTo(1.0);
+        assertThat(meterRegistry.counter("cce.intelligence.triggers.received", "trigger_type", "unknown").count()).isEqualTo(2.0);
     }
 
     @Test
     void consume_whenEngineThrows_countsErrorAndRethrows() {
-        IntelligenceTriggerEvent event = event("due");
+        IntelligenceTriggerEvent event = event("overdue");
         doThrow(new RuntimeException("engine failure")).when(engine).processTrigger(event);
 
         assertThatThrownBy(() -> consumer.consume(event))

@@ -166,8 +166,12 @@ The **Kafka record value** is the `IntelligenceTriggerEvent` JSON payload (the `
   "actionType": "CommunicationRequest",
   "severity": "HIGH",
   "intelligenceDestination": "supervisor",
-  "stepState": "overdue",
+  "stepStatus": "not-started",
+  "slaStatus": "overdue",
   "actionId": "anc-visit-2",
+  "intelligenceActionId": "anc-visit-2-overdue-alert",
+  "title": "ANC visit 2 overdue: contact the patient",
+  "triggerReason": "overdue",
   "protocolCanonical": "http://openphc.org/fhir/PlanDefinition/anc-high-risk|2.1",
   "detectedAt": "2026-03-25T00:00:05Z",
   "eventPayload": null
@@ -186,8 +190,12 @@ The **Kafka record value** is the `IntelligenceTriggerEvent` JSON payload (the `
 | `actionType` | String | Yes | FHIR `ActivityDefinition.kind` value: `CommunicationRequest`, `Task`, or `ServiceRequest`. Stored directly as the Intelligence Service `action_type` — no secondary mapping. |
 | `severity` | String | Yes | Effective severity: `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`. Resolved by Compliance from PlanDefinition extension `intelligence-severity`, falling back to `action_definition.severity`. |
 | `intelligenceDestination` | String | Yes | Effective routing destination (e.g., `supervisor`, `patient-reminder`). Resolved by Compliance from PlanDefinition extension `intelligence-destination`, falling back to `action_definition.intelligence_destination`. Used for `destination_adaptor_mapping` routing lookup. |
-| `stepState` | String | Yes | Current step state (lowercase): `due`, `overdue`, `missed`, `completed`. Used for trigger type derivation and FHIR extension. |
-| `actionId` | String | Yes | PlanDefinition action ID (e.g., `anc-visit-2`). Stored on `intelligence_delivery` for traceability and FHIR payload. |
+| `stepStatus` | String | No | The step's status code (`not-started`, `completed`, …). `cce-step-status` extension. |
+| `slaStatus` | String | No | The step's SLA status (`overdue`, `missed`, `met`); absent while unjudged. `cce-sla-status` extension. |
+| `actionId` | String | Yes | The step the intelligence action sits under (e.g., `anc-visit-2`). Stored on `intelligence_delivery` for traceability and FHIR payload. |
+| `intelligenceActionId` | String | No | The intelligence action that fired (e.g., `anc-visit-2-overdue-alert`). CommunicationRequest `about[]` / Task `focus`. |
+| `title` | String | No | The intelligence action's title from the PlanDefinition. Used as `payload.contentString` / `description`; a generated summary when absent. |
+| `triggerReason` | String | No | Why it fired — `completion`, or the deviation type: `overdue`, `missed`, `order_violation`. `reasonCode`, and trigger type derivation. |
 | `protocolCanonical` | String | Yes | Protocol `url\|version` |
 | `detectedAt` | OffsetDateTime | Yes | When the event was detected |
 | `eventPayload` | JsonNode | No | Original FHIR payload from the Compliance Service. When present **and** `actionType` is `ServiceRequest`, the `FhirPayloadBuilder` passes this through as-is to the Receiver Adaptor instead of constructing a synthetic FHIR resource. `null` for most trigger events (CommunicationRequest, Task). |
@@ -200,22 +208,15 @@ The **Kafka record value** is the `IntelligenceTriggerEvent` JSON payload (the `
 
 ### Trigger Type Derivation
 
+The trigger type is derived from `triggerReason`:
+
 | Derived Type | Condition | Trigger Scenario |
 |---|---|---|
-| `step.due` | `stepState == "due"` | Step transitioned PENDING → DUE |
-| `deviation.overdue` | `stepState == "overdue"` | Step transitioned DUE → OVERDUE |
-| `deviation.missed` | `stepState == "missed"` | Step transitioned OVERDUE → MISSED |
-| `step.completed` | `stepState == "completed"` | Step completed (may be on-time or late — the PlanDefinition's action condition determines when this fires) |
-
-```java
-String triggerType = switch (event.getStepState()) {
-    case "due"       -> "step.due";
-    case "overdue"   -> "deviation.overdue";
-    case "missed"    -> "deviation.missed";
-    case "completed" -> "step.completed";
-    default          -> "unknown";
-};
-```
+| `step.completed` | `triggerReason == "completion"` | Step completed (may be on-time or late — the PlanDefinition's action condition determines when this fires) |
+| `deviation.overdue` | `triggerReason == "overdue"` | Step went OVERDUE |
+| `deviation.missed` | `triggerReason == "missed"` | Step went MISSED |
+| `deviation.order_violation` | `triggerReason == "order_violation"` | Step completed out of order |
+| `unknown` | anything else, or absent | — |
 
 Use this derived type for the `cce.intelligence.triggers.received` counter tag.
 
@@ -235,8 +236,12 @@ Use this derived type for the `cce.intelligence.triggers.received` counter tag.
   "actionType": "CommunicationRequest",
   "severity": "MEDIUM",
   "intelligenceDestination": "supervisor",
-  "stepState": "overdue",
+  "stepStatus": "not-started",
+  "slaStatus": "overdue",
   "actionId": "viral-load-check",
+  "intelligenceActionId": "viral-load-check-overdue-alert",
+  "title": "Viral load check overdue",
+  "triggerReason": "overdue",
   "protocolCanonical": "http://openphc.org/fhir/PlanDefinition/hiv-treatment|1.0",
   "detectedAt": "2026-03-25T00:00:05Z"
 }
@@ -254,8 +259,12 @@ Use this derived type for the `cce.intelligence.triggers.received` counter tag.
   "actionType": "CommunicationRequest",
   "severity": "HIGH",
   "intelligenceDestination": "supervisor",
-  "stepState": "missed",
+  "stepStatus": "not-started",
+  "slaStatus": "missed",
   "actionId": "anc-visit-3",
+  "intelligenceActionId": "anc-visit-3-missed-alert",
+  "title": "ANC visit 3 missed: escalate to the supervisor",
+  "triggerReason": "missed",
   "protocolCanonical": "http://openphc.org/fhir/PlanDefinition/anc-high-risk|2.1",
   "detectedAt": "2026-04-01T00:00:05Z"
 }
@@ -273,15 +282,19 @@ Use this derived type for the `cce.intelligence.triggers.received` counter tag.
   "actionType": "CommunicationRequest",
   "severity": "LOW",
   "intelligenceDestination": "patient-reminder",
-  "stepState": "completed",
+  "stepStatus": "completed",
+  "slaStatus": "met",
   "actionId": "anc-visit-2",
+  "intelligenceActionId": "anc-visit-2-completed-reminder",
+  "title": "ANC visit 2 done: remind the patient of visit 3",
+  "triggerReason": "completion",
   "protocolCanonical": "http://openphc.org/fhir/PlanDefinition/anc-high-risk|2.1",
   "detectedAt": "2026-04-02T10:30:00Z",
   "eventPayload": null
 }
 ```
 
-> **Note:** Completion triggers have `stepState: "completed"`. The trigger type `step.completed` is derived from `stepState == "completed"`. Whether this represents a late or on-time completion depends on the PlanDefinition's action condition — the Intelligence Service treats both the same. See [Trigger Type Derivation](#trigger-type-derivation).
+> **Note:** Completion triggers have `triggerReason: "completion"`, from which the trigger type `step.completed` is derived. Whether this represents a late or on-time completion depends on the PlanDefinition's action condition — the Intelligence Service treats both the same. See [Trigger Type Derivation](#trigger-type-derivation).
 
 ### 5.4 ServiceRequest Trigger with Passthrough Payload
 
@@ -297,8 +310,11 @@ When the Compliance Service triggers a `ServiceRequest` action, it can include t
   "actionType": "ServiceRequest",
   "severity": "HIGH",
   "intelligenceDestination": "lab-coordinator",
-  "stepState": "due",
+  "stepStatus": "completed",
   "actionId": "lab-referral-1",
+  "intelligenceActionId": "lab-referral-1-order",
+  "title": "Order a CBC",
+  "triggerReason": "completion",
   "protocolCanonical": "http://openphc.org/fhir/PlanDefinition/anc-high-risk|2.1",
   "detectedAt": "2026-04-03T08:00:00Z",
   "eventPayload": {
