@@ -171,6 +171,8 @@ The **Kafka record value** is the `IntelligenceTriggerEvent` JSON payload (the `
   "actionId": "anc-visit-2",
   "intelligenceActionId": "anc-visit-2-overdue-alert",
   "title": "ANC visit 2 overdue: contact the patient",
+  "category": "reminder",
+  "participantTypes": ["patient"],
   "triggerReason": "overdue",
   "protocolCanonical": "http://openphc.org/fhir/PlanDefinition/anc-high-risk|2.1",
   "detectedAt": "2026-03-25T00:00:05Z",
@@ -189,12 +191,14 @@ The **Kafka record value** is the `IntelligenceTriggerEvent` JSON payload (the `
 | `protocolDefinitionId` | UUID | Yes | FK to `protocol_definition.id` — stored on `intelligence_delivery` for traceability. Resolved by Compliance from the evaluator's runtime context (`intelligence_event_log.protocol_instance_id → protocol_instance.protocol_definition_id`). |
 | `actionType` | String | Yes | FHIR `ActivityDefinition.kind` value: `CommunicationRequest`, `Task`, or `ServiceRequest`. Stored directly as the Intelligence Service `action_type` — no secondary mapping. |
 | `severity` | String | Yes | Effective severity: `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`. Resolved by Compliance from PlanDefinition extension `intelligence-severity`, falling back to `action_definition.severity`. |
-| `intelligenceDestination` | String | Yes | Effective routing destination (e.g., `supervisor`, `patient-reminder`). Resolved by Compliance from PlanDefinition extension `intelligence-destination`, falling back to `action_definition.intelligence_destination`. Used for `destination_adaptor_mapping` routing lookup. |
+| `intelligenceDestination` | String | Yes | Effective routing destination (e.g., `supervisor`, `patient-reminder`). Resolved by Compliance from PlanDefinition extension `intelligence-destination`, falling back to `action_definition.intelligence_destination`. Used for `destination_adaptor_mapping` routing lookup, and sent as the `cce-destination` extension (not as `recipient`). |
 | `stepStatus` | String | No | The step's status code (`not-started`, `completed`, …). `cce-step-status` extension. |
 | `slaStatus` | String | No | The step's SLA status (`overdue`, `missed`, `met`); absent while unjudged. `cce-sla-status` extension. |
 | `actionId` | String | Yes | The step the intelligence action sits under (e.g., `anc-visit-2`). Stored on `intelligence_delivery` for traceability and FHIR payload. |
-| `intelligenceActionId` | String | No | The intelligence action that fired (e.g., `anc-visit-2-overdue-alert`). CommunicationRequest `about[]` / Task `focus`. |
+| `intelligenceActionId` | String | No | The intelligence action that fired (e.g., `anc-visit-2-overdue-alert`). `cce-intelligence-action-id` extension. |
 | `title` | String | No | The intelligence action's title from the PlanDefinition. Used as `payload.contentString` / `description`; a generated summary when absent. |
+| `category` | String | No | The kind of communication, from the intelligence action's `code` in the HL7 `communication-category` CodeSystem: `alert`, `notification`, `reminder` or `instruction`. CommunicationRequest `category`; `notification` when absent. |
+| `participantTypes` | String[] | No | Who the intelligence action is for, from its PlanDefinition `participant.type`: `patient`, `practitioner`, `related-person`, `device`. With `patient`, the CommunicationRequest `recipient` is the subject patient; otherwise `recipient` is left out. |
 | `triggerReason` | String | No | Why it fired — `completion`, or the deviation type: `overdue`, `missed`, `order_violation`. `reasonCode`, and trigger type derivation. |
 | `protocolCanonical` | String | Yes | Protocol `url\|version` |
 | `detectedAt` | OffsetDateTime | Yes | When the event was detected |

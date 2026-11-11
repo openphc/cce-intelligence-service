@@ -252,16 +252,18 @@ The trigger event is **self-contained** — all fields needed for routing and FH
 IntelligenceTriggerEvent
   ├── actionType ───────────► FHIR kind (CommunicationRequest / Task / ServiceRequest) — stored directly as ActionType
   ├── severity ─────────────► FHIR priority mapping + extension
-  ├── intelligenceDestination ► Routing lookup (destination_adaptor_mapping) + FHIR recipient
-  ├── subject ──────────────► FHIR subject.identifier
+  ├── intelligenceDestination ► Routing lookup (destination_adaptor_mapping) + FHIR extension (cce-destination)
+  ├── subject ──────────────► FHIR subject (type Patient, by identifier)
   ├── protocolCanonical ────► CommunicationRequest about[] (PlanDefinition, by identifier)
-  ├── actionId ─────────────► CommunicationRequest about[] (the step, by identifier)
-  ├── intelligenceActionId ─► CommunicationRequest about[] / Task focus (the action, by identifier)
+  ├── actionId ─────────────► FHIR extension (cce-protocol-step-id)
+  ├── intelligenceActionId ─► FHIR extension (cce-intelligence-action-id)
   ├── title ────────────────► payload.contentString / description (else a generated summary)
+  ├── category ─────────────► CommunicationRequest category (HL7 communication-category; notification when absent)
+  ├── participantTypes ─────► CommunicationRequest recipient = the subject patient, when it includes "patient"
   ├── triggerReason ────────► reasonCode (completion / overdue / missed / order_violation)
   ├── stepStatus ───────────► FHIR extension (cce-step-status)
   ├── slaStatus ────────────► FHIR extension (cce-sla-status)
-  ├── detectedAt ───────────► FHIR authoredOn
+  ├── (build time) ─────────► FHIR authoredOn (UTC, seconds and milliseconds always present)
   ├── eventPayload ─────────► If present AND actionType=ServiceRequest → passed through as-is (original FHIR payload from Compliance Service)
   ├── intelligenceEventId ───────► intelligence_delivery.intelligence_event_id (traceability)
   └── actionDefinitionId ──► intelligence_delivery.action_definition_id (traceability)
@@ -282,7 +284,7 @@ The trigger event's `actionType` carries the FHIR `ActivityDefinition.kind` valu
 | `ServiceRequest` (with `eventPayload`) | **Passthrough** — original `eventPayload` from Compliance Service | Referral or lab order |
 | `ServiceRequest` (without `eventPayload`) | `ServiceRequest` (built by FhirPayloadBuilder) | Referral or lab order |
 
-The `actionType` is used in the FHIR payload's `category` / `code` coding, the `contentString` summary, and the REST API response.
+The `actionType` is used in the Task `code` coding, the generated `contentString` summary, and the REST API response. The CommunicationRequest `category` is the action's communication category instead (see below).
 
 #### Payload Resource Types
 
@@ -302,33 +304,46 @@ An overdue alert from the Step SLA service:
   "status": "active",
   "priority": "urgent",
   "identifier": [{ "system": "http://openphc.org/fhir/intelligence-delivery-id", "value": "<delivery id>" }],
-  "category": [{ "coding": [{ "system": "http://openphc.org/fhir/CodeSystem/cce-action-type",
-                              "code": "CommunicationRequest", "display": "CommunicationRequest" }] }],
-  "subject": { "identifier": { "system": "http://openphc.org/fhir/patient-upid", "value": "patient-001" } },
+  "category": [{ "coding": [{ "system": "http://terminology.hl7.org/CodeSystem/communication-category",
+                              "code": "reminder", "display": "Reminder" }] }],
+  "subject": { "type": "Patient",
+               "identifier": { "system": "http://openphc.org/fhir/patient-upid", "value": "patient-001" } },
   "about": [
     { "type": "PlanDefinition",
       "identifier": { "system": "http://openphc.org/fhir/protocol-canonical",
-                      "value": "http://example.org/PlanDefinition/chronic-care|1.0.0" } },
-    { "identifier": { "system": "http://openphc.org/fhir/protocol-step-id", "value": "follow-up-visit" },
-      "display": "follow-up-visit" },
-    { "identifier": { "system": "http://openphc.org/fhir/intelligence-action-id", "value": "follow-up-visit-overdue-alert" },
-      "display": "Follow-up visit overdue: contact the patient" }
+                      "value": "http://example.org/PlanDefinition/chronic-care|1.0.0" } }
   ],
   "payload": [{ "contentString": "Follow-up visit overdue: contact the patient" }],
-  "reasonCode": [{ "coding": [{ "system": "http://openphc.org/fhir/CodeSystem/cce-trigger-reason", "code": "overdue" }] }],
-  "recipient": [{ "display": "care-team" }],
-  "authoredOn": "2026-11-03T05:18:20Z",
+  "reasonCode": [{ "coding": [{ "system": "http://openphc.org/fhir/CodeSystem/cce-trigger-reason",
+                                "code": "overdue", "display": "Overdue" }] }],
+  "recipient": [{ "type": "Patient",
+                  "identifier": { "system": "http://openphc.org/fhir/patient-upid", "value": "patient-001" } }],
+  "authoredOn": "2026-11-03T05:18:20.000Z",
   "extension": [
     { "url": "http://openphc.org/fhir/StructureDefinition/cce-severity", "valueCode": "high" },
     { "url": "http://openphc.org/fhir/StructureDefinition/cce-intelligence-event-id", "valueId": "<intelligence_event_log id>" },
     { "url": "http://openphc.org/fhir/StructureDefinition/cce-step-status", "valueCode": "not-started" },
-    { "url": "http://openphc.org/fhir/StructureDefinition/cce-sla-status", "valueCode": "overdue" }
+    { "url": "http://openphc.org/fhir/StructureDefinition/cce-sla-status", "valueCode": "overdue" },
+    { "url": "http://openphc.org/fhir/StructureDefinition/cce-protocol-step-id", "valueString": "follow-up-visit" },
+    { "url": "http://openphc.org/fhir/StructureDefinition/cce-intelligence-action-id", "valueString": "follow-up-visit-overdue-alert" },
+    { "url": "http://openphc.org/fhir/StructureDefinition/cce-destination", "valueString": "care-team" }
   ]
 }
 ```
 
-The references in `about` are logical (by identifier): a canonical is not a resource id, so
-`PlanDefinition/<canonical>` would not be a valid literal reference.
+`recipient` is who the message is for. It is set only when the intelligence action declares
+`participant.type = patient`, and is then the subject patient. A practitioner or organization recipient
+depends on the patient (e.g. their own clinic), so CCE leaves it out and the receiving system resolves it.
+The routing destination is not a recipient: it travels as the `cce-destination` extension.
+
+`category` is the kind of communication — `alert`, `notification`, `reminder` or `instruction` in the HL7
+`communication-category` CodeSystem — as the intelligence action declares it with its `code` in the
+PlanDefinition; `notification` when it declares none.
+
+`about` holds only the protocol, as a logical reference (by identifier): a canonical is not a resource
+id, so `PlanDefinition/<canonical>` would not be a valid literal reference. The step and the intelligence
+action are elements of that PlanDefinition, not resources, so they are carried as the
+`cce-protocol-step-id` and `cce-intelligence-action-id` extensions rather than as references.
 
 #### Task Payload
 
@@ -340,17 +355,18 @@ The references in `about` are logical (by identifier): a canonical is not a reso
   "priority": "urgent",
   "identifier": [{ "system": "http://openphc.org/fhir/intelligence-delivery-id", "value": "<delivery id>" }],
   "code": { "coding": [{ "system": "http://openphc.org/fhir/CodeSystem/cce-action-type", "code": "Task", "display": "Task" }] },
-  "for": { "identifier": { "system": "http://openphc.org/fhir/patient-upid", "value": "patient-001" } },
-  "focus": { "identifier": { "system": "http://openphc.org/fhir/intelligence-action-id", "value": "follow-up-visit-overdue-alert" },
-             "display": "Follow-up visit overdue: contact the patient" },
+  "for": { "type": "Patient", "identifier": { "system": "http://openphc.org/fhir/patient-upid", "value": "patient-001" } },
   "description": "Follow-up visit overdue: contact the patient",
-  "reasonCode": { "coding": [{ "system": "http://openphc.org/fhir/CodeSystem/cce-trigger-reason", "code": "overdue" }] },
-  "authoredOn": "2026-11-03T05:18:20Z",
+  "reasonCode": { "coding": [{ "system": "http://openphc.org/fhir/CodeSystem/cce-trigger-reason", "code": "overdue", "display": "Overdue" }] },
+  "authoredOn": "2026-11-03T05:18:20.000Z",
   "extension": [ "…the same extensions as CommunicationRequest…" ]
 }
 ```
 
 `Task.reasonCode` is `0..1` (one CodeableConcept), where `CommunicationRequest.reasonCode` is `0..*`.
+The Task has no `focus`: `Task.focus` is the resource the task acts on, and an intelligence action is an
+element of the PlanDefinition, not a resource. The step and the action are the same extensions as on
+the CommunicationRequest.
 
 #### FHIR Field Mapping
 
@@ -359,18 +375,17 @@ The references in `about` are logical (by identifier): a canonical is not a reso
 | `identifier` | Intelligence delivery ID | Intelligence delivery ID | `intelligence_delivery.id` |
 | `status` | `active` | `requested` | Fixed per resource type |
 | `priority` | Mapped from severity | Mapped from severity | `trigger.severity` |
-| `category` / `code` | Action type coding | Action type coding | `trigger.actionType` |
-| `subject` / `for` | Patient UPID | Patient UPID | `trigger.subject` |
-| `about` | Protocol, step and intelligence action, by identifier | — | `trigger.protocolCanonical`, `trigger.actionId`, `trigger.intelligenceActionId`, `trigger.title` |
-| `focus` | — | The intelligence action, by identifier | `trigger.intelligenceActionId`, `trigger.title` |
+| `category` / `code` | Communication category (HL7; `notification` when absent) | Action type coding | `trigger.category` / `trigger.actionType` |
+| `subject` / `for` | Patient UPID (`type` Patient) | Patient UPID (`type` Patient) | `trigger.subject` |
+| `about` | The protocol, by identifier | — | `trigger.protocolCanonical` |
 | `payload.contentString` / `description` | The action's title, else a generated summary | Same | `trigger.title` |
 | `reasonCode` | Why it fired (array) | Why it fired (single) | `trigger.triggerReason` |
-| `recipient` | Destination name | — | `trigger.intelligenceDestination` |
-| `authoredOn` | Build time | Build time | `FhirPayloadBuilder` |
-| `extension` | Severity, event id, step status, SLA status | Same | Trigger event fields |
+| `recipient` | The subject patient, when the action declares a patient participant; else left out | — | `trigger.participantTypes`, `trigger.subject` |
+| `authoredOn` | Build time (UTC, milliseconds) | Build time (UTC, milliseconds) | `FhirPayloadBuilder` |
+| `extension` | Severity, event id, step status, SLA status, step id, intelligence action id, destination | Same | Trigger event fields |
 
 Fields a trigger does not carry are left out — an untitled action gets the generated summary, a trigger
-without `triggerReason` or `intelligenceActionId` gets no `reasonCode` / `focus` — and an extension with no
+without `triggerReason` gets no `reasonCode`, one without a patient participant gets no `recipient` — and an extension with no
 value is never written: FHIR forbids an element with neither a value nor children.
 
 #### Severity → FHIR Priority Mapping
