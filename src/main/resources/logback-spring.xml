@@ -21,7 +21,7 @@
                 <includeMdcKeyName>intelligenceEventId</includeMdcKeyName>
                 <includeMdcKeyName>intelligenceDeliveryId</includeMdcKeyName>
                 <includeMdcKeyName>protocolCanonical</includeMdcKeyName>
-                <includeMdcKeyName>stepState</includeMdcKeyName>
+                <includeMdcKeyName>stepStatus</includeMdcKeyName>
             </encoder>
         </appender>
         <root level="INFO">

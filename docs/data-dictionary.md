@@ -409,27 +409,33 @@ The FHIR R4-compliant resource sent to the Receiver Adaptor. Resource type depen
   "priority": "urgent",
   "category": [{
     "coding": [{
-      "system": "http://openphc.org/fhir/CodeSystem/cce-action-type",
-      "code": "ESCALATION",
-      "display": "Escalation"
+      "system": "http://terminology.hl7.org/CodeSystem/communication-category",
+      "code": "alert",
+      "display": "Alert"
     }]
   }],
   "subject": {
+    "type": "Patient",
     "identifier": { "system": "http://openphc.org/fhir/patient-upid", "value": "260225-0002-5501" }
   },
   "about": [
-    { "reference": "PlanDefinition/anc-high-risk|2.1" },
-    { "display": "anc-visit-2" }
+    { "type": "PlanDefinition",
+      "identifier": { "system": "http://openphc.org/fhir/protocol-canonical",
+                      "value": "http://openphc.org/fhir/PlanDefinition/anc-high-risk|2.1" } }
   ],
   "payload": [{
-    "contentString": "[HIGH] ESCALATION for patient 260225-0002-5501 — step anc-visit-2 overdue (PlanDefinition/anc-high-risk|2.1)"
+    "contentString": "ANC visit 2 overdue: contact the patient"
   }],
-  "recipient": [{ "display": "supervisor" }],
-  "authoredOn": "2026-04-15T00:00:05Z",
+  "reasonCode": [{ "coding": [{ "system": "http://openphc.org/fhir/CodeSystem/cce-trigger-reason", "code": "overdue", "display": "Overdue" }] }],
+  "authoredOn": "2026-04-15T00:00:05.000Z",
   "extension": [
     { "url": "http://openphc.org/fhir/StructureDefinition/cce-severity", "valueCode": "high" },
     { "url": "http://openphc.org/fhir/StructureDefinition/cce-intelligence-event-id", "valueId": "intelligence-event-uuid" },
-    { "url": "http://openphc.org/fhir/StructureDefinition/cce-step-state", "valueCode": "overdue" }
+    { "url": "http://openphc.org/fhir/StructureDefinition/cce-step-status", "valueCode": "not-started" },
+    { "url": "http://openphc.org/fhir/StructureDefinition/cce-sla-status", "valueCode": "overdue" },
+    { "url": "http://openphc.org/fhir/StructureDefinition/cce-protocol-step-id", "valueString": "anc-visit-2" },
+    { "url": "http://openphc.org/fhir/StructureDefinition/cce-intelligence-action-id", "valueString": "anc-visit-2-overdue-alert" },
+    { "url": "http://openphc.org/fhir/StructureDefinition/cce-destination", "valueString": "supervisor" }
   ]
 }
 ```

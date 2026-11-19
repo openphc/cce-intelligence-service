@@ -108,8 +108,8 @@ Intelligence Deliveries track the **delivery lifecycle** of fired intelligence a
       "resourceType": "CommunicationRequest",
       "status": "active",
       "priority": "urgent",
-      "category": [{ "coding": [{ "system": "http://openphc.org/fhir/CodeSystem/cce-action-type", "code": "CommunicationRequest" }] }],
-      "subject": { "identifier": { "system": "http://openphc.org/fhir/patient-upid", "value": "260225-0002-5501" } },
+      "category": [{ "coding": [{ "system": "http://terminology.hl7.org/CodeSystem/communication-category", "code": "alert", "display": "Alert" }] }],
+      "subject": { "type": "Patient", "identifier": { "system": "http://openphc.org/fhir/patient-upid", "value": "260225-0002-5501" } },
       "payload": [{ "contentString": "[HIGH] CommunicationRequest for patient 260225-0002-5501 — step anc-visit-2 overdue (PlanDefinition/anc-high-risk|2.1)" }]
     },
     "deliveryResult": {

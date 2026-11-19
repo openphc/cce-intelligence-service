@@ -10,12 +10,31 @@ import org.openphc.cce.intelligence.kafka.model.IntelligenceTriggerEvent;
 import org.springframework.stereotype.Component;
 
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.UUID;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class FhirPayloadBuilder {
+
+    static final String PROTOCOL_CANONICAL_SYSTEM = "http://openphc.org/fhir/protocol-canonical";
+    static final String TRIGGER_REASON_SYSTEM = "http://openphc.org/fhir/CodeSystem/cce-trigger-reason";
+    static final String COMMUNICATION_CATEGORY_SYSTEM = "http://terminology.hl7.org/CodeSystem/communication-category";
+    /** Used when the intelligence action declares no category. */
+    static final String DEFAULT_COMMUNICATION_CATEGORY = "notification";
+    static final String PROTOCOL_STEP_EXTENSION = "http://openphc.org/fhir/StructureDefinition/cce-protocol-step-id";
+    static final String INTELLIGENCE_ACTION_EXTENSION = "http://openphc.org/fhir/StructureDefinition/cce-intelligence-action-id";
+    /** The routing destination the delivery went to (e.g. a destination code), not a FHIR recipient. */
+    static final String DESTINATION_EXTENSION = "http://openphc.org/fhir/StructureDefinition/cce-destination";
+
+    /**
+     * FHIR dateTime with seconds always present and millisecond precision, in UTC.
+     * OffsetDateTime.toString() drops zero seconds ("…T12:52Z", not a valid FHIR dateTime) and
+     * writes nanoseconds, which many receivers cannot parse.
+     */
+    private static final DateTimeFormatter FHIR_DATE_TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX");
 
     private final ObjectMapper objectMapper;
 
@@ -50,40 +69,50 @@ public class FhirPayloadBuilder {
         identifier.put("system", "http://openphc.org/fhir/intelligence-delivery-id");
         identifier.put("value", deliveryId != null ? deliveryId.toString() : "pending");
 
-        // Category
-        ArrayNode categories = resource.putArray("category");
-        ObjectNode category = categories.addObject();
-        ArrayNode codings = category.putArray("coding");
-        ObjectNode coding = codings.addObject();
-        coding.put("system", "http://openphc.org/fhir/CodeSystem/cce-action-type");
-        coding.put("code", resolveActionType(event));
-        coding.put("display", resolveActionType(event));
+        // Category: the kind of communication (HL7 communication-category), as the intelligence action
+        // declares it in the PlanDefinition; a plain notification when it declares none.
+        String categoryCode = event.getCategory() != null && !event.getCategory().isBlank()
+                ? event.getCategory() : DEFAULT_COMMUNICATION_CATEGORY;
+        ObjectNode coding = resource.putArray("category").addObject().putArray("coding").addObject();
+        coding.put("system", COMMUNICATION_CATEGORY_SYSTEM);
+        coding.put("code", categoryCode);
+        coding.put("display", capitalize(categoryCode));
 
         // Subject (FHIR identifier-based reference)
-        ObjectNode subject = resource.putObject("subject");
-        ObjectNode subjectIdentifier = subject.putObject("identifier");
-        subjectIdentifier.put("system", "http://openphc.org/fhir/patient-upid");
-        subjectIdentifier.put("value", event.getSubject());
+        resource.set("subject", patientReference(event));
 
-        // About (protocol + action references)
+        // About: the protocol, as a logical (identifier) reference. A canonical is not a resource id, so
+        // "PlanDefinition/<canonical>" would not be a valid literal reference. The step and the
+        // intelligence action are elements of that PlanDefinition, not resources, so they are carried as
+        // extensions (see addExtensions) rather than as references.
         ArrayNode about = resource.putArray("about");
-        ObjectNode aboutRef = about.addObject();
-        aboutRef.put("reference", "PlanDefinition/" + event.getProtocolCanonical());
-        ObjectNode aboutAction = about.addObject();
-        aboutAction.put("display", event.getActionId());
+        addIdentifierReference(about, "PlanDefinition", PROTOCOL_CANONICAL_SYSTEM,
+                event.getProtocolCanonical(), null);
+        if (about.isEmpty()) {
+            resource.remove("about");
+        }
 
-        // Payload — human-readable summary
+        // Payload — the action's title from the PlanDefinition, else a generated summary
         ArrayNode payload = resource.putArray("payload");
         ObjectNode payloadContent = payload.addObject();
-        payloadContent.put("contentString", buildSummary(event));
+        payloadContent.put("contentString", buildMessage(event));
 
-        // Recipient
-        ArrayNode recipients = resource.putArray("recipient");
-        ObjectNode recipient = recipients.addObject();
-        recipient.put("display", event.getIntelligenceDestination());
+        // ReasonCode (0..* on CommunicationRequest): why it fired
+        ObjectNode reason = buildReasonCode(event);
+        if (reason != null) {
+            resource.putArray("reasonCode").add(reason);
+        }
+
+        // Recipient: who the message is for. Set only when the intelligence action declares a patient
+        // participant — then it is the subject. A practitioner or organization recipient depends on the
+        // patient (e.g. their own PHC) and is left to the receiving system; the routing destination is
+        // not a recipient and travels as the cce-destination extension instead.
+        if (event.getParticipantTypes() != null && event.getParticipantTypes().contains("patient")) {
+            resource.putArray("recipient").add(patientReference(event));
+        }
 
         // AuthoredOn
-        resource.put("authoredOn", OffsetDateTime.now().toString());
+        resource.put("authoredOn", fhirNow());
 
         // CCE Extensions
         addExtensions(resource, event);
@@ -113,16 +142,22 @@ public class FhirPayloadBuilder {
         coding.put("display", "Task");
 
         // For (subject - FHIR identifier-based reference)
-        ObjectNode forRef = resource.putObject("for");
-        ObjectNode forIdentifier = forRef.putObject("identifier");
-        forIdentifier.put("system", "http://openphc.org/fhir/patient-upid");
-        forIdentifier.put("value", event.getSubject());
+        resource.set("for", patientReference(event));
 
-        // Description
-        resource.put("description", buildSummary(event));
+        // No focus: Task.focus is the resource the task acts on, and an intelligence action is an element
+        // of the PlanDefinition, not a resource. The step and the action travel as extensions.
+
+        // Description — the action's title from the PlanDefinition, else a generated summary
+        resource.put("description", buildMessage(event));
+
+        // ReasonCode (0..1 on Task): why it fired
+        ObjectNode reason = buildReasonCode(event);
+        if (reason != null) {
+            resource.set("reasonCode", reason);
+        }
 
         // AuthoredOn
-        resource.put("authoredOn", OffsetDateTime.now().toString());
+        resource.put("authoredOn", fhirNow());
 
         // CCE Extensions
         addExtensions(resource, event);
@@ -152,10 +187,7 @@ public class FhirPayloadBuilder {
         coding.put("display", "ServiceRequest");
 
         // Subject (FHIR identifier-based reference)
-        ObjectNode subject = resource.putObject("subject");
-        ObjectNode subjectIdentifier = subject.putObject("identifier");
-        subjectIdentifier.put("system", "http://openphc.org/fhir/patient-upid");
-        subjectIdentifier.put("value", event.getSubject());
+        resource.set("subject", patientReference(event));
 
         // Note / description
         ArrayNode notes = resource.putArray("note");
@@ -163,7 +195,7 @@ public class FhirPayloadBuilder {
         note.put("text", buildSummary(event));
 
         // AuthoredOn
-        resource.put("authoredOn", OffsetDateTime.now().toString());
+        resource.put("authoredOn", fhirNow());
 
         // CCE Extensions
         addExtensions(resource, event);
@@ -182,9 +214,79 @@ public class FhirPayloadBuilder {
         eventIdExt.put("url", "http://openphc.org/fhir/StructureDefinition/cce-intelligence-event-id");
         eventIdExt.put("valueId", event.getIntelligenceEventId().toString());
 
-        ObjectNode stepStateExt = extensions.addObject();
-        stepStateExt.put("url", "http://openphc.org/fhir/StructureDefinition/cce-step-state");
-        stepStateExt.put("valueCode", event.getStepState());
+        // FHIR forbids an element with neither a value nor children, so absent values are left out.
+        addCodeExtension(extensions, "http://openphc.org/fhir/StructureDefinition/cce-step-status",
+                event.getStepStatus());
+        addCodeExtension(extensions, "http://openphc.org/fhir/StructureDefinition/cce-sla-status",
+                event.getSlaStatus());
+        // Where it comes from in the protocol, and where CCE routed it
+        addStringExtension(extensions, PROTOCOL_STEP_EXTENSION, event.getActionId());
+        addStringExtension(extensions, INTELLIGENCE_ACTION_EXTENSION, event.getIntelligenceActionId());
+        addStringExtension(extensions, DESTINATION_EXTENSION, event.getIntelligenceDestination());
+    }
+
+    /** The patient as a typed logical reference, by UPID. */
+    private ObjectNode patientReference(IntelligenceTriggerEvent event) {
+        ObjectNode reference = objectMapper.createObjectNode();
+        reference.put("type", "Patient");
+        ObjectNode identifier = reference.putObject("identifier");
+        identifier.put("system", "http://openphc.org/fhir/patient-upid");
+        identifier.put("value", event.getSubject());
+        return reference;
+    }
+
+    private void addStringExtension(ArrayNode extensions, String url, String value) {
+        if (value == null || value.isBlank()) return;
+        ObjectNode extension = extensions.addObject();
+        extension.put("url", url);
+        extension.put("valueString", value);
+    }
+
+    private static String fhirNow() {
+        return OffsetDateTime.now(ZoneOffset.UTC).format(FHIR_DATE_TIME);
+    }
+
+    private static String capitalize(String code) {
+        return code.isEmpty() ? code : Character.toUpperCase(code.charAt(0)) + code.substring(1);
+    }
+
+    private void addCodeExtension(ArrayNode extensions, String url, String code) {
+        if (code == null || code.isBlank()) return;
+        ObjectNode extension = extensions.addObject();
+        extension.put("url", url);
+        extension.put("valueCode", code);
+    }
+
+    /** A Reference by identifier (no literal reference). Skipped when there is no value. */
+    private void addIdentifierReference(ArrayNode references, String type, String system, String value,
+                                        String display) {
+        if (value == null || value.isBlank()) return;
+        ObjectNode reference = references.addObject();
+        if (type != null) {
+            reference.put("type", type);
+        }
+        ObjectNode identifier = reference.putObject("identifier");
+        identifier.put("system", system);
+        identifier.put("value", value);
+        if (display != null) {
+            reference.put("display", display);
+        }
+    }
+
+    /** The trigger reason as a CodeableConcept, or null when the event has none. */
+    private ObjectNode buildReasonCode(IntelligenceTriggerEvent event) {
+        if (event.getTriggerReason() == null || event.getTriggerReason().isBlank()) return null;
+        ObjectNode reason = objectMapper.createObjectNode();
+        ObjectNode coding = reason.putArray("coding").addObject();
+        coding.put("system", TRIGGER_REASON_SYSTEM);
+        coding.put("code", event.getTriggerReason());
+        // "order_violation" → "Order violation"
+        coding.put("display", capitalize(event.getTriggerReason().replace('_', ' ')));
+        return reason;
+    }
+
+    private String buildMessage(IntelligenceTriggerEvent event) {
+        return event.getTitle() != null && !event.getTitle().isBlank() ? event.getTitle() : buildSummary(event);
     }
 
     private String mapSeverityToFhirPriority(String severity) {

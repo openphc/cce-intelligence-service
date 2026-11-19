@@ -37,14 +37,15 @@ public class IntelligenceTriggerConsumer {
         MDC.put("correlationId", event.getId().toString());
         MDC.put("subject", event.getSubject());
         MDC.put("intelligenceEventId", event.getIntelligenceEventId().toString());
-        MDC.put("stepState", event.getStepState());
+        MDC.put("stepStatus", event.getStepStatus());
 
         try {
-            log.info("Received intelligence trigger: eventId={}, subject={}, stepState={}, destination={}",
-                    event.getIntelligenceEventId(), event.getSubject(),
-                    event.getStepState(), event.getIntelligenceDestination());
+            log.info("Received intelligence trigger: eventId={}, subject={}, stepStatus={}, triggerReason={}, "
+                            + "intelligenceActionId={}, destination={}",
+                    event.getIntelligenceEventId(), event.getSubject(), event.getStepStatus(),
+                    event.getTriggerReason(), event.getIntelligenceActionId(), event.getIntelligenceDestination());
 
-            String triggerType = deriveTriggerType(event.getStepState());
+            String triggerType = deriveTriggerType(event);
             Counter.builder("cce.intelligence.triggers.received")
                     .description("Intelligence trigger events received")
                     .tag("trigger_type", triggerType)
@@ -64,13 +65,14 @@ public class IntelligenceTriggerConsumer {
         }
     }
 
-    private String deriveTriggerType(String stepState) {
-        if (stepState == null) return "unknown";
-        return switch (stepState) {
-            case "due" -> "step.due";
+    private String deriveTriggerType(IntelligenceTriggerEvent event) {
+        String triggerReason = event.getTriggerReason();
+        if (triggerReason == null) return "unknown";
+        return switch (triggerReason) {
+            case "completion" -> "step.completed";
             case "overdue" -> "deviation.overdue";
             case "missed" -> "deviation.missed";
-            case "completed" -> "step.completed";
+            case "order_violation" -> "deviation.order_violation";
             default -> "unknown";
         };
     }

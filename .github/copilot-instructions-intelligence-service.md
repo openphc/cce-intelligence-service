@@ -83,8 +83,12 @@ The Intelligence Service connects to the **same PostgreSQL database** (`ccedb`) 
   "actionType": "CommunicationRequest",
   "severity": "HIGH",
   "intelligenceDestination": "supervisor",
-  "stepState": "overdue",
+  "stepStatus": "not-started",
+  "slaStatus": "overdue",
   "actionId": "anc-visit-2",
+  "intelligenceActionId": "anc-visit-2-overdue-alert",
+  "title": "ANC visit 2 overdue: contact the patient",
+  "triggerReason": "overdue",
   "protocolCanonical": "http://openphc.org/fhir/PlanDefinition/anc-high-risk|2.1",
   "detectedAt": "2026-03-25T00:00:05Z",
   "eventPayload": null
@@ -93,7 +97,7 @@ The Intelligence Service connects to the **same PostgreSQL database** (`ccedb`) 
 
 > **`eventPayload`:** Optional `JsonNode`. When present and `actionType` is `ServiceRequest`, the original FHIR payload from the Compliance Service is passed through to the Receiver Adaptor as-is.
 
-> **Trigger type derivation:** Derived from `stepState` alone: `due` → `step.due`, `overdue` → `deviation.overdue`, `missed` → `deviation.missed`, `completed` → `step.completed`.
+> **Trigger type derivation:** Derived from `triggerReason`: `completion` → `step.completed`, `overdue` → `deviation.overdue`, `missed` → `deviation.missed`, `order_violation` → `deviation.order_violation`, anything else → `unknown`.
 
 ## API Endpoints
 
